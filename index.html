@@ -22,8 +22,8 @@ small{opacity:.9}
  <video id="camera" autoplay playsinline muted></video>
  <div id="start">
   <h2>✈️ 顔で飛ぶ！<br>3Dスカイツアー</h2>
-  <p>障害物なし！<br>顔を左右・上下に動かして<br>空の景色を楽しもう ☁️🌈</p>
-  <p><small>上下は高感度<br>約1〜3分でゴール</small></p>
+  <p>障害物なし！<br>飛行機は中央がホームポジション。<br>顔を少し左右・上下に動かすだけで<br>大きく動くよ！ ☁️🌈</p>
+  <p><small>上下左右とも高感度<br>約1〜3分でゴール</small></p>
   <button id="startBtn">📷 カメラ開始</button>
  </div>
 </div>
@@ -33,11 +33,20 @@ small{opacity:.9}
 const c=document.getElementById('game'),x=c.getContext('2d'),v=document.getElementById('camera');
 const start=document.getElementById('start'),btn=document.getElementById('startBtn');
 let W,H,dpr,playing=false,last=0,score=0,dist=0,fx=.5,fy=.5,tx=.5,ty=.5;
+const HOME_X=.5, HOME_Y=.5, DEAD=.035;
+function intuitiveAxis(v, home){
+  const d=v-home;
+  if(Math.abs(d)<DEAD) return home;
+  const sign=d<0?-1:1;
+  const mag=Math.min(1,Math.abs(d)/(0.5-DEAD));
+  return home + sign*mag*0.5;
+}
+let homeX=.5,homeY=.5;
 let rings=[];
 function size(){dpr=Math.min(devicePixelRatio||1,2);W=innerWidth;H=innerHeight;c.width=W*dpr;c.height=H*dpr;x.setTransform(dpr,0,0,dpr,0,0)}
 addEventListener('resize',size);size();
 function reset(){score=0;dist=0;rings=[];for(let i=0;i<40;i++)rings.push({x:(Math.random()-.5)*8,y:(Math.random()-.5)*4.8,z:i*40+80,r:1.8,hit:false})}
-function proj(a,b,z){let s=520/(z+1);return{x:W/2+(a-(fx-.5)*13)*s,y:H*.53-(b-(.5-fy)*10)*s,s}}
+function proj(a,b,z){let s=520/(z+1);return{x:W/2+(a-(fx-.5)*20)*s,y:H*.53-(b-(.5-fy)*16)*s,s}}
 function background(){
  let g=x.createLinearGradient(0,0,0,H);g.addColorStop(0,'#397de0');g.addColorStop(.48,'#73c9f0');g.addColorStop(1,'#f8d99a');x.fillStyle=g;x.fillRect(0,0,W,H);
  // sun
@@ -53,17 +62,23 @@ function draw(){
  background();
  rings.forEach(r=>{if(r.z<=1)return;let p=proj(r.x,r.y,r.z),rr=r.r*p.s;x.strokeStyle='#ffd447';x.lineWidth=Math.max(3,p.s*.12);x.beginPath();x.arc(p.x,p.y,rr,0,7);x.stroke()});
  // cute plane
- x.save();x.translate(W/2,H*.77);x.rotate((fx-.5)*-.3);
+ x.save();
+ // 飛行機は画面中央がホーム。顔の動きで上下左右へ大きく移動
+ const px=W/2+(fx-.5)*W*.72, py=H*.50+(fy-.5)*H*.52;
+ x.translate(px,py);x.rotate((fx-.5)*-.38);
  x.fillStyle='#fff3a8';x.beginPath();x.moveTo(0,-55);x.quadraticCurveTo(19,-15,11,20);x.lineTo(5,17);x.lineTo(0,40);x.lineTo(-5,17);x.lineTo(-11,20);x.quadraticCurveTo(-19,-15,0,-55);x.fill();
  x.fillStyle='#ff9fcf';x.beginPath();x.ellipse(0,-9,7,10,0,0,7);x.fill();
  x.fillStyle='#9ad9ff';x.beginPath();x.moveTo(-8,9);x.lineTo(-45,29);x.lineTo(-8,24);x.closePath();x.fill();x.beginPath();x.moveTo(8,9);x.lineTo(45,29);x.lineTo(8,24);x.closePath();x.fill();
  x.fillStyle='#ff7da9';x.beginPath();x.arc(-4,-21,2,0,7);x.arc(4,-21,2,0,7);x.fill();x.restore();
 }
 function update(dt){
- fx+=(tx-fx)*Math.min(1,dt*8);fy+=(ty-fy)*Math.min(1,dt*8);
+ // ホームポジションは顔が画面中央。中央から少し動かすだけで大きく反応
+ tx=Math.max(0,Math.min(1,.5+(tx-.5)*2.2));
+ ty=Math.max(0,Math.min(1,.5+(ty-.5)*2.2));
+ fx+=(tx-fx)*Math.min(1,dt*12);fy+=(ty-fy)*Math.min(1,dt*12);
  dist+=28*dt/10;
  rings.forEach(r=>r.z-=28*dt);
- rings=rings.filter(r=>{if(r.z<2.5&&!r.hit&&Math.hypot(r.x-(fx-.5)*13,r.y-(.5-fy)*10)<r.r){r.hit=true;score+=10}return r.z>-10});
+ rings=rings.filter(r=>{if(r.z<2.5&&!r.hit&&Math.hypot(r.x-(fx-.5)*20,r.y-(.5-fy)*16)<r.r){r.hit=true;score+=10}return r.z>-10});
  while(rings.length<40)rings.push({x:(Math.random()-.5)*8,y:(Math.random()-.5)*4.8,z:1500+Math.random()*600,r:1.8,hit:false});
  document.getElementById('score').textContent=score;document.getElementById('dist').textContent=Math.floor(dist);
  if(dist>=180){playing=false;setTimeout(()=>{alert('🌈 ゴール！ おめでとう！\\n距離 '+Math.floor(dist)+'m　⭐ '+score);start.style.display='block';btn.textContent='もう一度飛ぶ'},50)}
@@ -75,7 +90,17 @@ async function begin(){
   v.srcObject=stream;v.style.display='block';
   const mesh=new FaceMesh({locateFile:f=>`https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${f}`});
   mesh.setOptions({maxNumFaces:1,refineLandmarks:false,minDetectionConfidence:.5,minTrackingConfidence:.5});
-  mesh.onResults(r=>{if(!r.multiFaceLandmarks?.length)return;let n=r.multiFaceLandmarks[0][1];tx=1-n.x;ty=n.y});
+  mesh.onResults(r=>{
+  if(!r.multiFaceLandmarks?.length)return;
+  const lm=r.multiFaceLandmarks[0];
+  // 鼻の位置を基準に、顔の向きと画面上の移動を直感的に反映
+  const n=lm[1];
+  // 鏡像表示なので左右を反転：顔を右へ→飛行機も右へ
+  const faceX=1-n.x;
+  const faceY=n.y;
+  tx=intuitiveAxis(faceX, HOME_X);
+  ty=intuitiveAxis(faceY, HOME_Y);
+});
   const cam=new Camera(v,{onFrame:async()=>mesh.send({image:v}),width:640,height:480});cam.start();
   start.style.display='none';reset();playing=true;last=performance.now();requestAnimationFrame(loop);
  }catch(e){alert('カメラを許可してください。スマホではHTTPSのページで開く必要があります。')}
