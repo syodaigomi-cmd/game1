@@ -83,6 +83,13 @@ function update(dt){
  document.getElementById('score').textContent=score;document.getElementById('dist').textContent=Math.floor(dist);
  if(dist>=180){playing=false;setTimeout(()=>{alert('🌈 ゴール！ おめでとう！\\n距離 '+Math.floor(dist)+'m　⭐ '+score);start.style.display='block';btn.textContent='もう一度飛ぶ'},50)}
 }
+function drawHomeGuide(){
+  x.save();
+  x.strokeStyle='rgba(255,255,255,.35)'; x.lineWidth=2; x.setLineDash([8,8]);
+  x.beginPath(); x.moveTo(W/2-45,H/2); x.lineTo(W/2+45,H/2); x.moveTo(W/2,H/2-45); x.lineTo(W/2,H/2+45); x.stroke();
+  x.setLineDash([]); x.beginPath(); x.arc(W/2,H/2,10,0,Math.PI*2); x.stroke(); x.restore();
+}
+
 function loop(t){if(!playing)return;let dt=Math.min(.05,(t-last)/1000||.016);last=t;update(dt);draw();requestAnimationFrame(loop)}
 async function begin(){
  try{
