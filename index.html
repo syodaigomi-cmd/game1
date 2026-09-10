@@ -45,13 +45,14 @@ button{border:0;border-radius:12px;padding:9px 13px;font-weight:800;background:#
 <script>
 let scene,camera,renderer,ship,ringGroup=[],clouds=[],propellers=[];
 let score=0, speed=5, durationSeconds=120, faceLandmarker=null, stream=null, gameSeconds=120, gameStart=0, gameEnded=false;
-let targetX=0,targetY=2.8, shipX=0,shipY=2.8, shipZ=0;
+let targetX=0,targetY=2.8, shipX=0,shipY=2.8, shipZ=0, velX=0,velY=0;
 let baseX=0,baseY=0,faceReady=false, lastTime=performance.now(), ringTimer=0;
 
 const $=id=>document.getElementById(id);
 $('speed').oninput=e=>{speed=+e.target.value;$('speedVal').textContent=speed};$('duration').onchange=e=>{durationSeconds=+e.target.value;resetGame()};
 $('resetBtn').onclick=()=>resetGame();
 $('camBtn').onclick=()=>startCamera();
+$('faceResetBtn').onclick=()=>resetFaceCalibration();
 
 function init(){
  scene=new THREE.Scene();
@@ -213,7 +214,7 @@ function makeRing(z){
 function resetGame(){
  gameEnded=false; gameSeconds=durationSeconds; gameStart=performance.now(); $('time').textContent=Math.floor(durationSeconds/60)+':00'; score=0;$('score').textContent=score;ringGroup.forEach(r=>scene.remove(r));ringGroup=[];
  for(let i=0;i<10;i++)makeRing(-20-i*22);
- shipX=0;shipY=2.8;targetX=0;targetY=2.8;
+ shipX=0;shipY=2.8;targetX=0;targetY=2.8;velX=0;velY=0;
 }
 function addTouchControls(){
  let sx=0,sy=0;
@@ -221,6 +222,12 @@ function addTouchControls(){
  renderer.domElement.addEventListener('pointermove',e=>{if(e.buttons){targetX+=(e.clientX-sx)*.025;targetY-=(e.clientY-sy)*.025;sx=e.clientX;sy=e.clientY;clampTarget()}});
 }
 function clampTarget(){targetX=THREE.MathUtils.clamp(targetX,-10,10);targetY=THREE.MathUtils.clamp(targetY,-1,10)}
+function resetFaceCalibration(){
+  baseX=0;baseY=0;
+  targetX=0;targetY=2.8;
+  velX=0;velY=0;
+  if($('status')) $('status').textContent='🎯 顔認識：中央を見てください…';
+}
 async function startCamera(){
  try{
   if(stream)stream.getTracks().forEach(t=>t.stop());
@@ -245,7 +252,7 @@ function detectFace(){
   const lm=r.faceLandmarks[0];
   const nose=lm[1], left=lm[234], right=lm[454], top=lm[10], bottom=lm[152];
   const cx=(left.x+right.x)/2, cy=(top.y+bottom.y)/2;
-  if(!baseX){baseX=nose.x;baseY=nose.y}
+  if(baseX===0 && baseY===0){baseX=nose.x;baseY=nose.y;$('status').textContent='顔操作：ON（中央を基準にしました）'}
   const dx=(baseX-nose.x)*28, dy=(baseY-nose.y)*25;
   targetX=THREE.MathUtils.clamp(dx,-10,10);
   targetY=THREE.MathUtils.clamp(2.8+dy,-1,10);
@@ -257,8 +264,20 @@ function animate(){
  const now=performance.now();
  if(!gameEnded){ gameSeconds=Math.max(0,durationSeconds-(now-gameStart)/1000); const mm=Math.floor(gameSeconds/60), ss=Math.floor(gameSeconds%60); $('time').textContent=mm+':'+String(ss).padStart(2,'0'); if(gameSeconds<=0){gameEnded=true;$('status').textContent='⏱️ ゴール！ リング '+score+' 個';}}
  const dt=Math.min((now-lastTime)/1000,.04);lastTime=now;
- const k=1-Math.pow(.0005,dt);
- shipX+=(targetX-shipX)*k;shipY+=(targetY-shipY)*k;
+ // 加速度的な移動：顔を大きく動かすほど加速し、慣性をつけて移動します。
+ const accel=9.5;
+ const damping=Math.pow(0.12,dt);
+ velX+=(targetX-shipX)*accel*dt;
+ velY+=(targetY-shipY)*accel*dt;
+ velX*=damping; velY*=damping;
+ const maxVel=11;
+ velX=THREE.MathUtils.clamp(velX,-maxVel,maxVel);
+ velY=THREE.MathUtils.clamp(velY,-maxVel,maxVel);
+ shipX+=velX*dt; shipY+=velY*dt;
+ if(shipX<-10){shipX=-10;velX=0}
+ if(shipX>10){shipX=10;velX=0}
+ if(shipY<-1){shipY=-1;velY=0}
+ if(shipY>10){shipY=10;velY=0}
  ship.position.x=shipX;ship.position.y=shipY;
  const dx=targetX-shipX,dy=targetY-shipY;
  ship.rotation.z=THREE.MathUtils.clamp(-dx*.34,-1.25,1.25);
