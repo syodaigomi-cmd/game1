@@ -34,7 +34,7 @@ button{border:0;border-radius:12px;padding:9px 13px;font-weight:800;background:#
 <div class="panel">⭕ リング <span id="score">0</span></div><div class="panel">⏱️ <span id="time">2:00</span></div>
 <div class="panel">⏱️ 時間 <select id="duration"><option value="60">1分</option><option value="120" selected>2分</option><option value="180">3分</option></select></div><div class="panel">⚡ 速度 <input id="speed" type="range" min="1" max="10" value="5"> <span id="speedVal">5</span></div>
 <div class="panel" id="status">顔操作：準備中</div>
-<button id="camBtn">📷 カメラ</button>
+<button id="camBtn">📷 カメラ</button><button id="faceResetBtn">🎯 顔認識リセット</button>
 <button id="resetBtn">↻ リセット</button>
 </div>
 <video id="camera" autoplay playsinline muted></video>
@@ -298,7 +298,11 @@ function animate(){
  renderer.render(scene,camera);
 }
 function resize(){camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight)}
-$('startBtn').onclick=async()=>{$('start').style.display='none';init();await startCamera()};
+$('startBtn').onclick=async()=>{
+  $('start').style.display='none';
+  if(!renderer) init();
+  await startCamera();
+};
 </script>
 </body>
 </html>
