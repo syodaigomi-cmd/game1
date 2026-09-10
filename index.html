@@ -43,14 +43,20 @@ button{border:0;border-radius:12px;padding:9px 13px;font-weight:800;background:#
 
 <script>
 let scene,camera,renderer,ship,ringGroup=[],clouds=[],propellers=[];
-let score=0, speed=5, durationSeconds=120, faceLandmarker=null, stream=null, gameSeconds=120, gameStart=0, gameEnded=false;
+let score=0, speed=5, durationSeconds=120, stream=null, gameSeconds=120, gameStart=0, gameEnded=false;
 let targetX=0,targetY=2.8, shipX=0,shipY=2.8, shipZ=0, velX=0,velY=0;
 let baseX=null,baseY=null,faceReady=false,faceBusy=false,lastFaceTime=0,smoothX=.5,smoothY=.5,faceLost=0,lastTime=performance.now(),ringTimer=0; let MPFilesetResolver=null, MPFaceLandmarker=null;
+let videoStream=null,faceLandmarker=null,mpReady=false,lastDetect=0;
+let gestureX=0,gestureY=0,gestureBoost=0;
 
 const $=id=>document.getElementById(id);
 $('speed').oninput=e=>{speed=+e.target.value;$('speedVal').textContent=speed};$('duration').onchange=e=>{durationSeconds=+e.target.value;resetGame()};
 $('resetBtn').onclick=()=>resetGame();
-$('retryFaceBtn').onclick=async()=>{if(!renderer)init(); await startGestureCamera();};
+$('retryFaceBtn').onclick=async()=>{
+  const b=$('retryFaceBtn'); if(b.dataset.busy==='1') return;
+  b.dataset.busy='1'; b.disabled=true;
+  try{ if(!renderer) init(); await startGestureCamera(); }finally{ b.dataset.busy='0'; b.disabled=false; }
+};
 
 function init(){
  scene=new THREE.Scene();
@@ -220,16 +226,32 @@ function resetGestureState(){
   targetX=0;targetY=2.8;velX=0;velY=0;
 }
 
-let videoStream=null,faceLandmarker=null,mpReady=false,faceBusy=false,lastDetect=0;
-let baseX=null,baseY=null,smoothX=.5,smoothY=.5;
-let gestureX=0,gestureY=0,gestureBoost=0;
 
-$('startBtn').onclick=async()=>{ if(!renderer)init(); await startGestureCamera(); if(videoStream)$('start').style.display='none'; };
+$('startBtn').onclick=async()=>{
+  const btn=$('startBtn');
+  if(btn.dataset.busy==='1') return;
+  btn.dataset.busy='1'; btn.disabled=true;
+  $('status').textContent='⏳ ゲームを準備しています…';
+  try{
+    if(!renderer) init();
+    const ok=await startGestureCamera();
+    if(ok){
+      $('start').style.display='none';
+      resetGame();
+      lastTime=performance.now();
+    }
+  }catch(e){
+    console.error(e);
+    $('status').textContent='⚠️ スタートできませんでした。もう一度押してください';
+  }finally{
+    btn.dataset.busy='0'; btn.disabled=false;
+  }
+};
 
 async function startGestureCamera(){
   try{
     if(!window.isSecureContext && !['localhost','127.0.0.1'].includes(location.hostname)){
-      $('status').textContent='🔒 HTTPS環境で開いてください'; return;
+      $('status').textContent='🔒 HTTPS環境で開いてください'; return false;
     }
     if(!navigator.mediaDevices?.getUserMedia) throw new Error('この端末ではカメラを利用できません');
     if(videoStream) videoStream.getTracks().forEach(t=>t.stop());
@@ -238,10 +260,12 @@ async function startGestureCamera(){
     const v=$('camera');v.srcObject=videoStream;v.style.display='block';await v.play();
     await new Promise(r=>v.videoWidth?r():v.addEventListener('loadeddata',r,{once:true}));
     $('status').textContent='🧠 顔ジェスチャーを準備中…';
-    await setupGestureRecognition();
+    const ok=await setupGestureRecognition();
+    return !!ok;
   }catch(e){
     console.error(e);
     $('status').textContent=e.name==='NotAllowedError'?'🚫 カメラの使用を許可してください':'⚠️ カメラ開始失敗：'+(e.message||e.name);
+    return false;
   }
 }
 
@@ -255,7 +279,8 @@ async function setupGestureRecognition(){
     mpReady=true;resetGestureState();faceReady=true;
     $('status').textContent='😊 顔を中央に置いてください';
     detectGestures();
-  }catch(e){console.error(e);$('status').textContent='⚠️ 顔認識の準備に失敗しました。再起動してください';}
+  }catch(e){console.error(e);$('status').textContent='⚠️ 顔認識の準備に失敗しました。もう一度スタートしてください'; return false;}
+  return true;
 }
 
 function detectGestures(){
