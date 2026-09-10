@@ -1,1 +1,369 @@
-<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no"><title>3D飛行船・顔操作リングゲーム</title><style>html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#8fd8ff;font-family:system-ui,sans-serif}#game{width:100%;height:100%;display:block}#ui{position:fixed;inset:0;pointer-events:none;color:#fff;text-shadow:0 2px 4px #345}.panel,#controls,#face{background:#0008;border-radius:14px;padding:10px 13px}.panel{position:absolute;top:12px;left:12px;font-weight:700}#controls{position:absolute;top:12px;right:12px;pointer-events:auto}button{border:0;border-radius:10px;padding:10px 14px;margin:3px;font-weight:700}#start{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);font-size:20px;pointer-events:auto}#face{position:absolute;left:50%;bottom:12px;transform:translateX(-50%);text-align:center}</style></head><body><canvas id="game"></canvas><div id="ui"><div class="panel">🎈 リング：<span id="score">0</span>　速度：<span id="speedText">1.0</span></div><div id="controls">速度 <input id="speed" type="range" min=".4" max="2.5" step=".1" value="1"><br><button id="reset">🔄 リセット</button></div><button id="start">▶ 顔操作でスタート</button><div id="face">顔認識：準備中</div></div><script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script><script type="module">import{FaceLandmarker,FilesetResolver}from"https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.22/vision_bundle.mjs";const canvas=document.querySelector('#game'),start=document.querySelector('#start'),reset=document.querySelector('#reset'),faceText=document.querySelector('#face'),scoreText=document.querySelector('#score'),speed=document.querySelector('#speed'),speedText=document.querySelector('#speedText');let scene,camera,renderer,ship,ring,video,landmarker,running=false,score=0,targetX=0,targetY=0,moveX=0,moveY=0;function init(){scene=new THREE.Scene();scene.background=new THREE.Color(0x8fd8ff);scene.fog=new THREE.Fog(0x8fd8ff,45,220);camera=new THREE.PerspectiveCamera(65,innerWidth/innerHeight,.1,500);renderer=new THREE.WebGLRenderer({canvas,antialias:true});renderer.setPixelRatio(Math.min(devicePixelRatio,2));renderer.setSize(innerWidth,innerHeight);scene.add(new THREE.HemisphereLight(0xdff8ff,0x6b8f50,2.2));let sun=new THREE.DirectionalLight(0xffffff,2);sun.position.set(-30,60,40);scene.add(sun);let ground=new THREE.Mesh(new THREE.PlaneGeometry(500,500),new THREE.MeshStandardMaterial({color:0x78b85b}));ground.rotation.x=-Math.PI/2;ground.position.y=-20;scene.add(ground);ship=new THREE.Group();let body=new THREE.Mesh(new THREE.SphereGeometry(2.8,32,24),new THREE.MeshStandardMaterial({color:0xf3a34b,roughness:.55}));body.scale.set(1.35,.8,2);ship.add(body);let cabin=new THREE.Mesh(new THREE.SphereGeometry(1.15,24,16),new THREE.MeshStandardMaterial({color:0x8bdcff,transparent:true,opacity:.85}));cabin.scale.set(1,.65,.8);cabin.position.y=1.45;ship.add(cabin);[-1,1].forEach(s=>{let fin=new THREE.Mesh(new THREE.ConeGeometry(.7,2.4,16),new THREE.MeshStandardMaterial({color:0xe5793c}));fin.rotation.z=Math.PI/2;fin.position.x=s*2.8;ship.add(fin)});scene.add(ship);ring=new THREE.Mesh(new THREE.TorusGeometry(5,.55,20,64),new THREE.MeshStandardMaterial({color:0xffdf45,emissive:0x664400}));scene.add(ring);for(let i=0;i<35;i++){let c=new THREE.Mesh(new THREE.SphereGeometry(3+Math.random()*5,16,12),new THREE.MeshStandardMaterial({color:0xffffff}));c.position.set((Math.random()-.5)*180,15+Math.random()*50,-20-Math.random()*240);c.scale.y=.5;scene.add(c)}resetGame();animate()}function resetGame(){score=0;scoreText.textContent=0;ship.position.set(0,4,0);ship.rotation.set(0,0,0);ring.position.set(0,4,-40);targetX=targetY=moveX=moveY=0}function nextRing(){ring.position.set((Math.random()-.5)*20,2+Math.random()*12,-75-Math.random()*35)}function animate(){requestAnimationFrame(animate);if(running){let sp=Number(speed.value);speedText.textContent=sp.toFixed(1);moveX+=(targetX-moveX)*.12;moveY+=(targetY-moveY)*.12;ship.position.x=moveX;ship.position.y=4+moveY;ship.rotation.z+=(-moveX*.22-ship.rotation.z)*.12;ship.rotation.x+=(moveY*.18-ship.rotation.x)*.12;ship.rotation.y+=(-moveX*.04-ship.rotation.y)*.10;ring.position.z+=sp*.55;if(Math.abs(ring.position.z)<3.2&&Math.hypot(ship.position.x-ring.position.x,ship.position.y-ring.position.y)<5.2){score++;scoreText.textContent=score;nextRing()}if(ring.position.z>8)nextRing()}camera.position.lerp(new THREE.Vector3(ship.position.x*.25,ship.position.y+3.5,15),.07);camera.lookAt(ship.position.x*.55,ship.position.y,ship.position.z-25);renderer.render(scene,camera)}async function startFace(){try{if(!navigator.mediaDevices?.getUserMedia)throw Error('camera');video=document.createElement('video');video.autoplay=true;video.playsInline=true;video.muted=true;video.style.display='none';document.body.appendChild(video);video.srcObject=await navigator.mediaDevices.getUserMedia({video:{facingMode:'user',width:{ideal:640},height:{ideal:480}},audio:false});await video.play();let fs=await FilesetResolver.forVisionTasks('https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.22/wasm');landmarker=await FaceLandmarker.createFromOptions(fs,{baseOptions:{modelAssetPath:'https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task',delegate:'GPU'},runningMode:'VIDEO',numFaces:1});faceText.textContent='顔認識：OK 👍　中央より少し上がホーム位置';track()}catch(e){faceText.textContent='顔認識を起動できません。HTTPSで開き、カメラを許可してください。';console.error(e)}}function track(){if(video&&landmarker&&video.readyState>=2){let r=landmarker.detectForVideo(video,performance.now());if(r.faceLandmarks?.length){let n=r.faceLandmarks[0][1];targetX=Math.max(-16,Math.min(16,(n.x-.5)*-32));targetY=Math.max(-12,Math.min(12,(.42-n.y)*28))}}requestAnimationFrame(track)}start.onclick=async()=>{start.style.display='none';if(!scene)init();running=true;await startFace()};reset.onclick=resetGame;speed.oninput=()=>speedText.textContent=Number(speed.value).toFixed(1);addEventListener('resize',()=>{if(camera){camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight)}});</script></body></html>
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>3D飛行船リングアドベンチャー</title>
+<style>
+html,body{margin:0;height:100%;overflow:hidden;background:#8ed8ff;font-family:system-ui,sans-serif}
+#game{position:fixed;inset:0}
+#ui{position:fixed;left:12px;right:12px;top:10px;z-index:5;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.panel{background:rgba(255,255,255,.86);border-radius:14px;padding:8px 11px;box-shadow:0 3px 12px #0002;font-weight:700}
+button{border:0;border-radius:12px;padding:9px 13px;font-weight:800;background:#fff;box-shadow:0 2px 8px #0002}
+#speed{width:110px;vertical-align:middle}
+#status{font-size:13px}
+#camera{position:fixed;right:12px;bottom:12px;width:145px;height:108px;object-fit:cover;border-radius:14px;transform:scaleX(-1);z-index:4;display:none;border:3px solid #fff}
+#help{position:fixed;left:50%;transform:translateX(-50%);bottom:12px;z-index:5;background:#ffffffd9;border-radius:15px;padding:9px 13px;text-align:center;font-size:13px}
+#start{position:fixed;inset:0;z-index:10;display:grid;place-items:center;background:linear-gradient(#73cfff,#dff7ff)}
+.card{width:min(90vw,430px);background:#fff;border-radius:24px;padding:24px;box-sizing:border-box;text-align:center;box-shadow:0 12px 40px #0003}
+.card h1{margin:0 0 10px;font-size:28px}.card p{line-height:1.7}
+.big{font-size:18px;background:#55b8ff;color:#fff;padding:14px 28px;border-radius:16px}
+</style>
+</head>
+<body>
+<div id="game"></div>
+<div id="start"><div class="card">
+<h1>🎈 3D 飛行船</h1>
+<p>顔のジェスチャーで飛行船を操縦し、<b>リングをくぐろう！</b><br>
+障害物なし。飛行船は画面中央より少し上がホームポジションです。</p>
+<button class="big" id="startBtn">カメラを使ってスタート</button><br><button id="retryFaceBtn" style="margin-top:10px">🔄 顔認識を再起動</button>
+<p style="font-size:12px">カメラの許可が必要です。顔のジェスチャーだけで操作します。<br>↔ 左右に首を傾ける　↕ 顔を上下に動かす　● 正面で停止</p>
+</div></div>
+
+<div id="ui">
+<div class="panel">⭕ リング <span id="score">0</span></div><div class="panel">⏱️ <span id="time">2:00</span></div>
+<div class="panel">⏱️ 時間 <select id="duration"><option value="60">1分</option><option value="120" selected>2分</option><option value="180">3分</option></select></div><div class="panel">⚡ 速度 <input id="speed" type="range" min="1" max="10" value="5"> <span id="speedVal">5</span></div>
+<div class="panel" id="status">顔操作：準備中</div><div class="panel" id="mpDiag">MediaPipe: 未起動</div>
+<button id="camBtn">📷 カメラ</button><button id="faceResetBtn">🎯 顔認識リセット</button>
+<button id="resetBtn">↻ リセット</button>
+</div>
+<video id="camera" autoplay playsinline muted></video>
+<div id="help">顔を「左・右に傾ける」「上・下に動かす」でジェスチャー操作</div>
+
+<script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
+
+<script>
+let scene,camera,renderer,ship,ringGroup=[],clouds=[],propellers=[];
+let score=0, speed=5, durationSeconds=120, faceLandmarker=null, stream=null, gameSeconds=120, gameStart=0, gameEnded=false;
+let targetX=0,targetY=2.8, shipX=0,shipY=2.8, shipZ=0, velX=0,velY=0;
+let baseX=null,baseY=null,baseRoll=0,faceReady=false,faceBusy=false,lastFaceTime=0,smoothX=.5,smoothY=.5,smoothRoll=0,faceLost=0,lastTime=performance.now(),ringTimer=0; let MPFilesetResolver=null, MPFaceLandmarker=null;
+let gestureX=0,gestureY=0,gestureLabel='停止';
+
+const $=id=>document.getElementById(id);
+$('speed').oninput=e=>{speed=+e.target.value;$('speedVal').textContent=speed};$('duration').onchange=e=>{durationSeconds=+e.target.value;resetGame()};
+$('resetBtn').onclick=()=>resetGame();
+$('camBtn').onclick=()=>startCamera();
+$('faceResetBtn').onclick=()=>resetFaceCalibration(); $('retryFaceBtn').onclick=async()=>{if(!renderer)init(); await startCamera();};
+
+function init(){
+ scene=new THREE.Scene();
+ scene.background=new THREE.Color(0x83d5ff);
+ scene.fog=new THREE.Fog(0x83d5ff,35,180);
+ camera=new THREE.PerspectiveCamera(62,innerWidth/innerHeight,.1,300);
+ camera.position.set(0,4.5,13);
+ camera.lookAt(0,3,-20);
+ renderer=new THREE.WebGLRenderer({antialias:true});
+ renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+ renderer.setSize(innerWidth,innerHeight);
+ $('game').appendChild(renderer.domElement);
+
+ scene.add(new THREE.HemisphereLight(0xffffff,0x72a7cc,2.1));
+ const sun=new THREE.DirectionalLight(0xffffff,2);sun.position.set(10,20,10);scene.add(sun);
+
+ const sea=new THREE.Mesh(new THREE.PlaneGeometry(400,400),new THREE.MeshPhongMaterial({color:0x36a9d6}));
+ sea.rotation.x=-Math.PI/2;sea.position.y=-2;scene.add(sea);
+
+ for(let i=0;i<15;i++) makeIsland(i);
+ for(let i=0;i<30;i++) makeCloud(i);
+ makeShip(); resetGame();
+ addEventListener('resize',resize);
+ addTouchControls();
+ animate();
+}
+function makeIsland(i){
+ const g=new THREE.Group();
+ const rock=new THREE.Mesh(new THREE.ConeGeometry(3+Math.random()*3,2+Math.random()*2,7),new THREE.MeshPhongMaterial({color:0x8bcf77}));
+ rock.position.y=-.5;g.add(rock);
+ const top=new THREE.Mesh(new THREE.CylinderGeometry(2+Math.random()*2,2.8+Math.random()*2,0.7,7),new THREE.MeshPhongMaterial({color:0x55b96a}));
+ top.position.y=.8;g.add(top);
+ g.position.set((Math.random()-.5)*100,-.5,-20-i*12);scene.add(g);
+}
+function makeCloud(i){
+ const g=new THREE.Group();
+ for(let j=0;j<5;j++){let m=new THREE.Mesh(new THREE.SphereGeometry(1.2+Math.random()*1.5,12,10),new THREE.MeshPhongMaterial({color:0xffffff,transparent:true,opacity:.9}));m.position.set(j*1.5,Math.random()*1.3,Math.random());g.add(m)}
+ g.position.set((Math.random()-.5)*80,8+Math.random()*20,-10-Math.random()*170);g.scale.setScalar(.7+Math.random()*1.5);scene.add(g);clouds.push(g);
+}
+function makeShip(){
+ ship=new THREE.Group();
+ propellers=[];
+
+ // ① まるくてかわいいパステルピンクの気球
+ const balloon=new THREE.Mesh(
+   new THREE.SphereGeometry(1.55,36,24),
+   new THREE.MeshPhongMaterial({color:0xf7b6d2,shininess:90})
+ );
+ balloon.scale.set(1.08,1.0,1.05);
+ balloon.position.y=.35;
+ ship.add(balloon);
+
+ // やさしい色の縦帯
+ for(const x of [-1.05,-.35,.35,1.05]){
+   const band=new THREE.Mesh(
+     new THREE.TorusGeometry(.99,.055,10,36),
+     new THREE.MeshPhongMaterial({color:0xffe6f1,shininess:60})
+   );
+   band.rotation.y=Math.PI/2;
+   band.position.set(x*.72,.35,0);
+   band.scale.set(.98,1,1);
+   ship.add(band);
+ }
+
+ // 小さくてかわいいゴンドラ
+ const cabin=new THREE.Mesh(
+   new THREE.BoxGeometry(1.45,.62,1.0),
+   new THREE.MeshPhongMaterial({color:0xe8a6bd,shininess:65})
+ );
+ cabin.position.set(0,-.75,.05);
+ ship.add(cabin);
+
+ // ゴンドラの白い縁
+ const rim=new THREE.Mesh(
+   new THREE.BoxGeometry(1.58,.10,1.08),
+   new THREE.MeshPhongMaterial({color:0xfff1f7,shininess:70})
+ );
+ rim.position.set(0,-.43,.05);
+ ship.add(rim);
+
+ // 後ろから見える丸い窓
+ for(const x of [-.48,0,.48]){
+   const w=new THREE.Mesh(
+     new THREE.CylinderGeometry(.14,.14,.055,20),
+     new THREE.MeshPhongMaterial({color:0xbfefff,shininess:90})
+   );
+   w.rotation.x=Math.PI/2;
+   w.position.set(x,-.68,.54);
+   ship.add(w);
+ }
+
+ // 尾翼
+ const tailFin=new THREE.Mesh(
+   new THREE.ConeGeometry(.48,1.25,4),
+   new THREE.MeshPhongMaterial({color:0xd8b4ef,shininess:60})
+ );
+ tailFin.rotation.x=Math.PI/2;
+ tailFin.position.set(0,.35,1.55);
+ ship.add(tailFin);
+
+ const leftFin=new THREE.Mesh(
+   new THREE.BoxGeometry(.12,.85,.58),
+   new THREE.MeshPhongMaterial({color:0xe5b8d0,shininess:55})
+ );
+ leftFin.position.set(-.92,.35,1.18);
+ leftFin.rotation.z=-.35;
+ ship.add(leftFin);
+
+ const rightFin=leftFin.clone();
+ rightFin.position.x=.92;
+ rightFin.rotation.z=.35;
+ ship.add(rightFin);
+
+ // 後方の左右プロペラ
+ for(const x of [-.72,.72]){
+   const motor=new THREE.Mesh(
+     new THREE.CylinderGeometry(.18,.18,.38,16),
+     new THREE.MeshPhongMaterial({color:0xd7a9bc,shininess:80})
+   );
+   motor.rotation.x=Math.PI/2;
+   motor.position.set(x,-.45,1.12);
+   ship.add(motor);
+
+   const hub=new THREE.Mesh(
+     new THREE.SphereGeometry(.12,16,12),
+     new THREE.MeshPhongMaterial({color:0xfff0a8,shininess:90})
+   );
+   hub.position.set(x,-.45,1.38);
+   ship.add(hub);
+
+   const prop=new THREE.Group();
+   for(let a=0;a<3;a++){
+     const blade=new THREE.Mesh(
+       new THREE.BoxGeometry(.10,.78,.07),
+       new THREE.MeshPhongMaterial({color:0xf7b6d2,shininess:70})
+     );
+     blade.position.y=.34;
+     blade.rotation.z=a*Math.PI*2/3;
+     prop.add(blade);
+   }
+   prop.position.set(x,-.45,1.40);
+   prop.rotation.z=.2;
+   ship.add(prop);
+ }
+
+ // 以前と同じ30%小さめ。画面上では扱いやすく、後ろ姿を見やすくする。
+ ship.scale.setScalar(.7);
+ ship.position.set(0,2.8,2);
+ scene.add(ship);
+}
+function makeRing(z){
+ const colors=[0xff4d6d,0xffd43b,0x4dd9ff,0x7ee081,0xb88cff,0xff8c42];
+ const shapes=[0,1,2]; const shape=shapes[Math.floor(Math.random()*shapes.length)];
+ let geo; if(shape===0) geo=new THREE.TorusGeometry(3.0,.18,14,64); else if(shape===1) geo=new THREE.RingGeometry(2.7,3.0,6); else geo=new THREE.RingGeometry(2.7,3.0,8);
+ const ring=new THREE.Mesh(geo,new THREE.MeshPhongMaterial({color:colors[Math.floor(Math.random()*colors.length)],emissive:0x222222,emissiveIntensity:.25,side:THREE.DoubleSide}));
+ ring.position.set((Math.random()-.5)*8,2.5+(Math.random()-.5)*3,z);
+ ring.rotation.set(0,0,0); scene.add(ring);ringGroup.push(ring);
+}
+function resetGame(){
+ gameEnded=false; gameSeconds=durationSeconds; gameStart=performance.now(); $('time').textContent=Math.floor(durationSeconds/60)+':00'; score=0;$('score').textContent=score;ringGroup.forEach(r=>scene.remove(r));ringGroup=[];
+ for(let i=0;i<10;i++)makeRing(-20-i*22);
+ shipX=0;shipY=2.8;targetX=0;targetY=2.8;velX=0;velY=0;baseX=null;baseY=null;baseRoll=0;smoothX=.5;smoothY=.5;smoothRoll=0;gestureX=0;gestureY=0;gestureLabel='停止';faceLost=0;
+}
+function resetFaceCalibration(){
+  baseX=null;baseY=null;baseRoll=0;smoothX=.5;smoothY=.5;smoothRoll=0;gestureX=0;gestureY=0;gestureLabel='停止';faceLost=0;
+  targetX=0;targetY=2.8;velX=0;velY=0;
+  if($('status')) $('status').textContent='🎯 顔をカメラ中央に置いてください';
+}
+async function startCamera(){
+ try{
+  if(!window.isSecureContext && location.hostname!=='localhost'){
+    $('status').textContent='🔒 HTTPSで開いてください（file://では顔認識できません）'; return;
+  }
+  if(!navigator.mediaDevices?.getUserMedia) throw new Error('カメラ非対応');
+  if(stream) stream.getTracks().forEach(t=>t.stop());
+  stream=await navigator.mediaDevices.getUserMedia({
+    video:{facingMode:'user',width:{ideal:640},height:{ideal:480},frameRate:{ideal:30,max:30}},audio:false
+  });
+  const video=$('camera'); video.srcObject=stream; video.style.display='block';
+  resetFaceCalibration(); $('status').textContent='📷 カメラOK：顔を中央にしてください';
+  await video.play();
+  await new Promise(r=>{if(video.videoWidth) return r(); video.addEventListener('loadeddata',r,{once:true})});
+  await setupFace();
+ }catch(e){
+  console.error(e);
+  $('status').textContent=e.name==='NotAllowedError'
+   ? '🚫 カメラ許可をONにしてください'
+   : '📷 カメラ開始エラー：'+(e.message||e.name);
+ }
+}
+async function loadMediaPipe(){
+  $('status').textContent='⏳ MediaPipeライブラリを読み込み中…'; $('mpDiag').textContent='MediaPipe: ライブラリ読み込み中…';
+  try{
+    const mod=await import('https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.22/+esm');
+    MPFilesetResolver=mod.FilesetResolver;
+    MPFaceLandmarker=mod.FaceLandmarker;
+    if(!MPFilesetResolver||!MPFaceLandmarker) throw new Error('顔認識部品を取得できません');
+    return true;
+  }catch(e){
+    console.error(e);
+    $('status').textContent='⚠️ MediaPipe読み込み失敗。通信状態を確認して再起動してください'; $('mpDiag').textContent='MediaPipe: ライブラリ失敗';
+    return false;
+  }
+}
+async function setupFace(){
+ try{
+  if(!MPFilesetResolver||!MPFaceLandmarker){
+    if(!(await loadMediaPipe())) throw new Error('MediaPipe読み込み失敗');
+  }
+  $('status').textContent='⏳ MediaPipeエンジンを起動中…'; $('mpDiag').textContent='MediaPipe: エンジン起動中…';
+  const vision=await MPFilesetResolver.forVisionTasks('https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.22/wasm');
+  const common={
+   baseOptions:{modelAssetPath:'https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task'},
+   runningMode:'VIDEO',numFaces:1,minFaceDetectionConfidence:.45,minFacePresenceConfidence:.45,minTrackingConfidence:.45
+  };
+  try{
+   faceLandmarker=await MPFaceLandmarker.createFromOptions(vision,{...common,baseOptions:{...common.baseOptions,delegate:'GPU'}}); $('mpDiag').textContent='MediaPipe: GPU起動OK';
+  }catch(gpuError){
+   console.warn('GPU失敗→CPU',gpuError);
+   faceLandmarker=await MPFaceLandmarker.createFromOptions(vision,{...common,baseOptions:{...common.baseOptions,delegate:'CPU'}}); $('mpDiag').textContent='MediaPipe: CPU起動OK';
+  }
+  faceReady=true;
+  resetFaceCalibration();
+  $('status').textContent='👤 顔認識ON：顔を中央に置いてください'; $('mpDiag').textContent='MediaPipe: 起動OK・顔待ち';
+  detectFace();
+ }catch(e){
+  faceReady=false;
+  console.error(e);
+  $('status').textContent='⚠️ MediaPipe起動失敗：'+(e.message||e.name); $('mpDiag').textContent='MediaPipe: 起動失敗';
+ }
+}
+function detectFace(){
+ requestAnimationFrame(detectFace);
+ if(!faceReady||faceBusy) return;
+ const video=$('camera');
+ if(!video||video.readyState<2||!video.videoWidth) return;
+ const now=performance.now();
+ if(now-lastFaceTime<33) return;
+ lastFaceTime=now; faceBusy=true;
+ try{
+  const r=faceLandmarker.detectForVideo(video,now);
+  if(r.faceLandmarks?.length){ $('mpDiag').textContent='MediaPipe: 顔検出OK';
+   const lm=r.faceLandmarks[0];
+   const fx=(lm[234].x+lm[454].x)/2;
+   const fy=(lm[10].y+lm[152].y)/2;
+   const roll=Math.atan2(lm[454].y-lm[234].y,lm[454].x-lm[234].x)*180/Math.PI;
+   if(baseX===null){
+    baseX=fx;baseY=fy;baseRoll=roll;smoothX=fx;smoothY=fy;smoothRoll=roll;
+    $('status').textContent='✅ ジェスチャー操作ON：顔を少し傾けてください';
+   }
+   smoothX+=(fx-smoothX)*.30; smoothY+=(fy-smoothY)*.30; smoothRoll+=(roll-smoothRoll)*.30;
+   const rollDelta=smoothRoll-baseRoll, yDelta=smoothY-baseY;
+   gestureX=rollDelta>9?1:rollDelta<-9?-1:0;
+   gestureY=yDelta>0.055?-1:yDelta<-0.055?1:0;
+   if(gestureX===-1&&gestureY===0) gestureLabel='← 左';
+   else if(gestureX===1&&gestureY===0) gestureLabel='右 →';
+   else if(gestureY===1&&gestureX===0) gestureLabel='↑ 上';
+   else if(gestureY===-1&&gestureX===0) gestureLabel='↓ 下';
+   else if(gestureX!==0&&gestureY!==0) gestureLabel=(gestureY===1?'↑':'↓')+(gestureX===-1?' ←':' →');
+   else gestureLabel='● 停止';
+   $('status').textContent='👤 ジェスチャー：'+gestureLabel;
+   faceLost=0;
+  }else{
+   faceLost++;
+   if(faceLost===1){gestureX=0;gestureY=0;gestureLabel='停止';$('status').textContent='👤 顔をカメラに入れてください';}
+  }
+ }catch(e){console.warn('face detection',e)}
+ finally{faceBusy=false}
+}
+function animate(){
+ requestAnimationFrame(animate);
+ const now=performance.now();
+ if(!gameEnded){ gameSeconds=Math.max(0,durationSeconds-(now-gameStart)/1000); const mm=Math.floor(gameSeconds/60), ss=Math.floor(gameSeconds%60); $('time').textContent=mm+':'+String(ss).padStart(2,'0'); if(gameSeconds<=0){gameEnded=true;$('status').textContent='⏱️ ゴール！ リング '+score+' 個';}}
+ const dt=Math.min((now-lastTime)/1000,.04);lastTime=now;
+ // ジェスチャー入力：方向ジェスチャー中だけ加速し、正面に戻すと停止
+ const accel=24.0, damping=Math.pow(0.025,dt), gesturePower=Math.min(1,speed/5);
+ const desiredVX=gestureX*7.5*gesturePower, desiredVY=gestureY*7.5*gesturePower;
+ velX+=(desiredVX-velX)*Math.min(1,accel*dt); velY+=(desiredVY-velY)*Math.min(1,accel*dt);
+ if(gestureX===0) velX*=damping; if(gestureY===0) velY*=damping;
+ const maxVel=10; velX=THREE.MathUtils.clamp(velX,-maxVel,maxVel); velY=THREE.MathUtils.clamp(velY,-maxVel,maxVel);
+ shipX+=velX*dt; shipY+=velY*dt;
+ if(shipX<-10){shipX=-10;velX=0}
+ if(shipX>10){shipX=10;velX=0}
+ if(shipY<-1){shipY=-1;velY=0}
+ if(shipY>10){shipY=10;velY=0}
+ ship.position.x=shipX;ship.position.y=shipY;
+ const dx=velX,dy=velY;
+ ship.rotation.z+=(THREE.MathUtils.clamp(-dx*.10,-1.05,1.05)-ship.rotation.z)*Math.min(1,7*dt);
+ ship.rotation.x+=(THREE.MathUtils.clamp(dy*.09,-.80,.80)-ship.rotation.x)*Math.min(1,7*dt);
+ ship.rotation.y+=(THREE.MathUtils.clamp(dx*.045,-.45,.45)-ship.rotation.y)*Math.min(1,7*dt);
+
+ const dz=(gameEnded?0:2+speed*.85)*dt;
+ ringGroup.forEach(r=>{r.position.z+=dz;r.rotation.z+=dt*.8});
+ for(const r of ringGroup){
+  const d=Math.hypot(r.position.x-ship.position.x,r.position.y-ship.position.y);
+  if(r.position.z>ship.position.z-1 && r.position.z<ship.position.z+1 && d<2.7){score++;$('score').textContent=score;r.position.z-=150;r.position.x=(Math.random()-.5)*8;r.position.y=2.5+(Math.random()-.5)*3}
+  if(r.position.z>12){r.position.z-=160;r.position.x=(Math.random()-.5)*8;r.position.y=2.5+(Math.random()-.5)*3}
+ }
+ clouds.forEach(c=>{c.position.z+=speed*.15*dt;if(c.position.z>25)c.position.z=-180});
+ camera.position.x+=(ship.position.x*.18-camera.position.x)*.03;
+ camera.position.y+=(ship.position.y*.12+4.3-camera.position.y)*.03;
+ camera.lookAt(ship.position.x*.2,ship.position.y*.35,-25);
+ renderer.render(scene,camera);
+}
+function resize(){camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight)}
+$('startBtn').onclick=async()=>{
+  if(!renderer) init();
+  await startCamera();
+  if(stream) $('start').style.display='none';
+};
+</script>
+</body>
+</html>
