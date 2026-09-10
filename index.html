@@ -27,7 +27,7 @@ button{border:0;border-radius:12px;padding:9px 13px;font-weight:800;background:#
 <p>顔を動かして飛行船を操縦し、<b>リングをくぐろう！</b><br>
 障害物なし。飛行船は画面中央より少し上がホームポジションです。</p>
 <button class="big" id="startBtn">カメラを使ってスタート</button><br><button id="retryFaceBtn" style="margin-top:10px">🔄 顔認識を再起動</button>
-<p style="font-size:12px">カメラの許可が必要です。うまく動かない時は、下のタッチ操作も使えます。</p>
+<p style="font-size:12px">カメラの許可が必要です。顔だけで飛行船を操作します。</p>
 </div></div>
 
 <div id="ui">
@@ -38,7 +38,7 @@ button{border:0;border-radius:12px;padding:9px 13px;font-weight:800;background:#
 <button id="resetBtn">↻ リセット</button>
 </div>
 <video id="camera" autoplay playsinline muted></video>
-<div id="help">顔を「上・下・左・右」に大きく動かすと、飛行船も大きく動きます　｜　画面タッチでも操作できます</div>
+<div id="help">顔を「上・下・左・右」に大きく動かすと、飛行船も大きく動きます</div>
 
 <script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
 
@@ -216,12 +216,6 @@ function resetGame(){
  for(let i=0;i<10;i++)makeRing(-20-i*22);
  shipX=0;shipY=2.8;targetX=0;targetY=2.8;velX=0;velY=0;baseX=null;baseY=null;smoothX=.5;smoothY=.5;faceLost=0;
 }
-function addTouchControls(){
- let sx=0,sy=0;
- renderer.domElement.addEventListener('pointerdown',e=>{sx=e.clientX;sy=e.clientY});
- renderer.domElement.addEventListener('pointermove',e=>{if(e.buttons){targetX+=(e.clientX-sx)*.025;targetY-=(e.clientY-sy)*.025;sx=e.clientX;sy=e.clientY;clampTarget()}});
-}
-function clampTarget(){targetX=THREE.MathUtils.clamp(targetX,-10,10);targetY=THREE.MathUtils.clamp(targetY,-1,10)}
 function resetFaceCalibration(){
   baseX=null;baseY=null;smoothX=.5;smoothY=.5;faceLost=0;
   targetX=0;targetY=2.8;velX=0;velY=0;
