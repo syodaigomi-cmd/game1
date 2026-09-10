@@ -12,7 +12,8 @@ html,body{margin:0;height:100%;overflow:hidden;background:#8ed8ff;font-family:sy
 button{border:0;border-radius:12px;padding:9px 13px;font-weight:800;background:#fff;box-shadow:0 2px 8px #0002}
 #speed{width:110px;vertical-align:middle}
 #status{font-size:13px}
-#camera{position:fixed;right:12px;bottom:12px;width:145px;height:108px;object-fit:cover;border-radius:14px;transform:scaleX(-1);z-index:4;display:none;border:3px solid #fff}
+#camera{position:fixed;right:12px;bottom:58px;width:150px;height:112px;object-fit:cover;border-radius:14px;transform:scaleX(-1);z-index:4;display:none;border:3px solid #fff;box-shadow:0 3px 12px #0003}
+
 #gestureGuide{position:fixed;left:50%;transform:translateX(-50%);bottom:12px;z-index:5;background:#ffffffd9;border-radius:15px;padding:9px 13px;text-align:center;font-size:13px}
 #start{position:fixed;inset:0;z-index:10;display:grid;place-items:center;background:linear-gradient(#73cfff,#dff7ff)}
 .card{width:min(90vw,430px);background:#fff;border-radius:24px;padding:24px;box-sizing:border-box;text-align:center;box-shadow:0 12px 40px #0003}
@@ -24,39 +25,40 @@ button{border:0;border-radius:12px;padding:9px 13px;font-weight:800;background:#
 <div id="game"></div>
 <div id="start"><div class="card">
 <h1>🎈 3D 飛行船</h1>
-<p>顔のジェスチャーで飛行船を操縦し、<b>リングをくぐろう！</b><br>
+<p>飛行船を操縦して、<b>リングをくぐろう！</b><br>
 障害物なし。飛行船は画面中央より少し上がホームポジションです。</p>
-<button class="big" id="startBtn">顔ジェスチャーでスタート</button><br><button id="retryFaceBtn" style="margin-top:10px">🔄 顔ジェスチャーを再起動</button>
-<p style="font-size:12px">カメラの許可が必要です。顔ジェスチャーだけで操作します。</p>
+<button class="big" id="startBtn">スタート</button>
+<p style="font-size:12px">スタート後、視線操作をONにできます。カメラが使えない場合はタッチ操作で遊べます。</p>
 </div></div>
 
 <div id="ui">
 <div class="panel">⭕ リング <span id="score">0</span></div><div class="panel">⏱️ <span id="time">2:00</span></div>
 <div class="panel">⏱️ 時間 <select id="duration"><option value="60">1分</option><option value="120" selected>2分</option><option value="180">3分</option></select></div><div class="panel">⚡ 速度 <input id="speed" type="range" min="1" max="10" value="5"> <span id="speedVal">5</span></div>
-<div class="panel" id="status">ジェスチャー操作：準備中</div>
+<div class="panel" id="status">タッチ操作：ON</div>
+<button id="gazeBtn">👀 視線操作ON</button>
 <button id="resetBtn">↻ リセット</button>
 </div>
+
 <video id="camera" autoplay playsinline muted></video>
-<div id="gestureGuide">顔ジェスチャー：左右＝方向転換　上下＝上昇・下降　顔を動かす方向へ飛行</div>
+<div id="gestureGuide">👀 視線：左＝左　右＝右　上＝上昇　下＝下降　｜　指ドラッグも使用できます</div>
 
 <script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.22/vision_bundle.js"></script>
 
 <script>
 let scene,camera,renderer,ship,ringGroup=[],clouds=[],propellers=[];
 let score=0, speed=5, durationSeconds=120, stream=null, gameSeconds=120, gameStart=0, gameEnded=false;
+let faceLandmarker=null, gazeActive=false, gazeBusy=false, gazeBaseX=null, gazeBaseY=null, gazeSmoothX=.5, gazeSmoothY=.5, lastGazeTime=0;
 let targetX=0,targetY=2.8, shipX=0,shipY=2.8, shipZ=0, velX=0,velY=0;
-let baseX=null,baseY=null,faceReady=false,faceBusy=false,lastFaceTime=0,smoothX=.5,smoothY=.5,faceLost=0,lastTime=performance.now(),ringTimer=0; let MPFilesetResolver=null, MPFaceLandmarker=null;
-let videoStream=null,faceLandmarker=null,mpReady=false,lastDetect=0;
-let gestureX=0,gestureY=0,gestureBoost=0;
+let lastTime=performance.now();
+
 
 const $=id=>document.getElementById(id);
 $('speed').oninput=e=>{speed=+e.target.value;$('speedVal').textContent=speed};$('duration').onchange=e=>{durationSeconds=+e.target.value;resetGame()};
 $('resetBtn').onclick=()=>resetGame();
-$('retryFaceBtn').onclick=async()=>{
-  const b=$('retryFaceBtn'); if(b.dataset.busy==='1') return;
-  b.dataset.busy='1'; b.disabled=true;
-  try{ if(!renderer) init(); await startGestureCamera(); }finally{ b.dataset.busy='0'; b.disabled=false; }
-};
+$('gazeBtn').onclick=()=>startGaze();
+
+$('startBtn').onclick=async()=>{ if(!renderer) init(); $('start').style.display='none'; $('status').textContent='ゲーム開始：タッチ操作ON'; await startGaze(); };
 
 function init(){
  scene=new THREE.Scene();
@@ -218,94 +220,93 @@ function makeRing(z){
 function resetGame(){
  gameEnded=false; gameSeconds=durationSeconds; gameStart=performance.now(); $('time').textContent=Math.floor(durationSeconds/60)+':00'; score=0;$('score').textContent=score;ringGroup.forEach(r=>scene.remove(r));ringGroup=[];
  for(let i=0;i<10;i++)makeRing(-20-i*22);
- shipX=0;shipY=2.8;targetX=0;targetY=2.8;velX=0;velY=0;resetGestureState();
+ shipX=0;shipY=2.8;targetX=0;targetY=2.8;velX=0;velY=0;gazeBaseX=null;gazeBaseY=null;resetOperationState();
 }
-function resetGestureState(){
-  baseX=null;baseY=null;smoothX=.5;smoothY=.5;
-  gestureX=0;gestureY=0;gestureBoost=0;faceReady=false;
-  targetX=0;targetY=2.8;velX=0;velY=0;
+function resetOperationState(){
+  targetX=0; targetY=2.8; velX=0; velY=0;
 }
 
+function addTouchControls(){
+  let sx=0,sy=0,dragging=false;
+  renderer.domElement.addEventListener('pointerdown',e=>{dragging=true;sx=e.clientX;sy=e.clientY;renderer.domElement.setPointerCapture?.(e.pointerId)});
+  renderer.domElement.addEventListener('pointermove',e=>{
+    if(!dragging)return;
+    targetX += (e.clientX-sx)*0.055;
+    targetY -= (e.clientY-sy)*0.055;
+    sx=e.clientX; sy=e.clientY;
+    targetX=THREE.MathUtils.clamp(targetX,-10,10);
+    targetY=THREE.MathUtils.clamp(targetY,-1,10);
+  });
+  renderer.domElement.addEventListener('pointerup',e=>{dragging=false;});
+  renderer.domElement.addEventListener('pointercancel',e=>{dragging=false;});
+}
 
-$('startBtn').onclick=async()=>{
-  const btn=$('startBtn');
-  if(btn.dataset.busy==='1') return;
-  btn.dataset.busy='1'; btn.disabled=true;
-  $('status').textContent='⏳ ゲームを準備しています…';
+async function startGaze(){
+  if(gazeActive || gazeBusy)return;
+  gazeBusy=true;
+  $('gazeBtn').disabled=true;
+  $('status').textContent='視線操作：カメラを起動中…';
   try{
-    if(!renderer) init();
-    const ok=await startGestureCamera();
-    if(ok){
-      $('start').style.display='none';
-      resetGame();
-      lastTime=performance.now();
+    if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) throw new Error('getUserMedia unavailable');
+    if(stream)stream.getTracks().forEach(t=>t.stop());
+    stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:'user',width:{ideal:640},height:{ideal:480}},audio:false});
+    const video=$('camera');
+    video.srcObject=stream;
+    video.style.display='block';
+    await video.play();
+    const vision=await FilesetResolver.forVisionTasks('https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.22/wasm');
+    try{
+      faceLandmarker=await FaceLandmarker.createFromOptions(vision,{baseOptions:{modelAssetPath:'https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task',delegate:'GPU'},runningMode:'VIDEO',numFaces:1});
+    }catch(e){
+      faceLandmarker=await FaceLandmarker.createFromOptions(vision,{baseOptions:{modelAssetPath:'https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task',delegate:'CPU'},runningMode:'VIDEO',numFaces:1});
     }
+    gazeActive=true; gazeBaseX=null; gazeBaseY=null; gazeSmoothX=.5; gazeSmoothY=.5;
+    $('status').textContent='👀 視線操作：ON';
+    detectGaze();
   }catch(e){
-    console.error(e);
-    $('status').textContent='⚠️ スタートできませんでした。もう一度押してください';
-  }finally{
-    btn.dataset.busy='0'; btn.disabled=false;
-  }
-};
+    console.log(e);
+    $('status').textContent='視線操作：カメラを使えません（タッチ操作ON）';
+    $('gazeBtn').disabled=false;
+  }finally{ gazeBusy=false; }
+}
 
-async function startGestureCamera(){
+function eyeRatio(lm, irisIds, leftCorner, rightCorner, topIds, bottomIds){
+  const iris=irisIds.reduce((a,i)=>({x:a.x+lm[i].x/irisIds.length,y:a.y+lm[i].y/irisIds.length}),{x:0,y:0});
+  const x0=lm[leftCorner].x, x1=lm[rightCorner].x;
+  const yTop=topIds.reduce((a,i)=>a+lm[i].y/topIds.length,0);
+  const yBot=bottomIds.reduce((a,i)=>a+lm[i].y/bottomIds.length,0);
+  return {x:(iris.x-Math.min(x0,x1))/(Math.abs(x1-x0)||.001), y:(iris.y-yTop)/(Math.abs(yBot-yTop)||.001)};
+}
+
+function detectGaze(){
+  if(!gazeActive||!faceLandmarker){requestAnimationFrame(detectGaze);return;}
+  const video=$('camera');
+  if(video.readyState<2){requestAnimationFrame(detectGaze);return;}
+  const now=performance.now();
+  if(now-lastGazeTime<45){requestAnimationFrame(detectGaze);return;}
+  lastGazeTime=now;
   try{
-    if(!window.isSecureContext && !['localhost','127.0.0.1'].includes(location.hostname)){
-      $('status').textContent='🔒 HTTPS環境で開いてください'; return false;
+    const r=faceLandmarker.detectForVideo(video,now);
+    if(r.faceLandmarks&&r.faceLandmarks[0]){
+      const lm=r.faceLandmarks[0];
+      const L=eyeRatio(lm,[468,469,470,471,472],33,133,[159,160],[145,144]);
+      const R=eyeRatio(lm,[473,474,475,476,477],362,263,[386,387],[374,373]);
+      let gx=(L.x+R.x)/2, gy=(L.y+R.y)/2;
+      gazeSmoothX += (gx-gazeSmoothX)*.35;
+      gazeSmoothY += (gy-gazeSmoothY)*.35;
+      if(gazeBaseX===null){gazeBaseX=gazeSmoothX;gazeBaseY=gazeSmoothY;}
+      // 視線の中心を基準に、少しの揺れは無視。感度は高め。
+      const dx=gazeSmoothX-gazeBaseX, dy=gazeSmoothY-gazeBaseY;
+      const dead=.035;
+      const sx=Math.abs(dx)<dead?0:THREE.MathUtils.clamp(dx/.13,-1,1);
+      const sy=Math.abs(dy)<dead?0:THREE.MathUtils.clamp(dy/.11,-1,1);
+      // カメラ映像に合わせて左右を直感的な向きに反転。
+      targetX=THREE.MathUtils.clamp(-sx*11,-10,10);
+      targetY=THREE.MathUtils.clamp(2.8-sy*8,-1,10);
+      $('status').textContent='👀 視線操作：ON';
     }
-    if(!navigator.mediaDevices?.getUserMedia) throw new Error('この端末ではカメラを利用できません');
-    if(videoStream) videoStream.getTracks().forEach(t=>t.stop());
-    $('status').textContent='📷 カメラを準備中…';
-    videoStream=await navigator.mediaDevices.getUserMedia({video:{facingMode:'user',width:{ideal:640},height:{ideal:480}},audio:false});
-    const v=$('camera');v.srcObject=videoStream;v.style.display='block';await v.play();
-    await new Promise(r=>v.videoWidth?r():v.addEventListener('loadeddata',r,{once:true}));
-    $('status').textContent='🧠 顔ジェスチャーを準備中…';
-    const ok=await setupGestureRecognition();
-    return !!ok;
-  }catch(e){
-    console.error(e);
-    $('status').textContent=e.name==='NotAllowedError'?'🚫 カメラの使用を許可してください':'⚠️ カメラ開始失敗：'+(e.message||e.name);
-    return false;
-  }
-}
-
-async function setupGestureRecognition(){
-  try{
-    const mod=await import('https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.22/+esm');
-    const vision=await mod.FilesetResolver.forVisionTasks('https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.22/wasm');
-    const options={baseOptions:{modelAssetPath:'https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task',delegate:'GPU'},runningMode:'VIDEO',numFaces:1,minFaceDetectionConfidence:.45,minFacePresenceConfidence:.45,minTrackingConfidence:.45};
-    try{ faceLandmarker=await mod.FaceLandmarker.createFromOptions(vision,options); }
-    catch(e){ options.baseOptions.delegate='CPU'; faceLandmarker=await mod.FaceLandmarker.createFromOptions(vision,options); }
-    mpReady=true;resetGestureState();faceReady=true;
-    $('status').textContent='😊 顔を中央に置いてください';
-    detectGestures();
-  }catch(e){console.error(e);$('status').textContent='⚠️ 顔認識の準備に失敗しました。もう一度スタートしてください'; return false;}
-  return true;
-}
-
-function detectGestures(){
-  requestAnimationFrame(detectGestures);
-  if(!mpReady||faceBusy||!faceLandmarker)return;
-  const v=$('camera');if(!v.videoWidth||v.readyState<2)return;
-  const now=performance.now();if(now-lastDetect<40)return;lastDetect=now;faceBusy=true;
-  try{
-    const r=faceLandmarker.detectForVideo(v,now);
-    if(!r.faceLandmarks?.length){$('status').textContent='👤 顔をカメラに入れてください';return;}
-    const lm=r.faceLandmarks[0];
-    const fx=(lm[234].x+lm[454].x)/2, fy=(lm[10].y+lm[152].y)/2;
-    if(baseX===null){baseX=fx;baseY=fy;smoothX=fx;smoothY=fy;}
-    smoothX+=(fx-smoothX)*.28;smoothY+=(fy-smoothY)*.28;
-    const nx=smoothX-baseX, ny=smoothY-baseY;
-    // ジェスチャーを3段階に分類：小さな揺れは無視、大きな移動ほど強く反映
-    const dead=.025;
-    const gx=Math.abs(nx)<dead?0:THREE.MathUtils.clamp(nx/0.12,-1,1);
-    const gy=Math.abs(ny)<dead?0:THREE.MathUtils.clamp(-ny/0.12,-1,1);
-    gestureX=gx;gestureY=gy;
-    gestureBoost=0;
-    targetX=THREE.MathUtils.clamp(gx*10,-10,10);
-    targetY=THREE.MathUtils.clamp(2.8+gy*7,-1,10);
-    $('status').textContent='😊 ジェスチャー操作中';
-  }catch(e){console.warn(e)} finally{faceBusy=false;}
+  }catch(e){console.log(e);}
+  requestAnimationFrame(detectGaze);
 }
 
 function animate(){
@@ -332,8 +333,6 @@ function animate(){
  ship.rotation.z=THREE.MathUtils.clamp(-dx*.34,-1.25,1.25);
  ship.rotation.x=THREE.MathUtils.clamp(dy*.28,-1.05,1.05);
  ship.rotation.y=THREE.MathUtils.clamp(dx*.14,-.65,.65);
-  ship.rotation.z+=gestureX*.18;
-  ship.rotation.x-=gestureY*.12;
 
  const dz=(gameEnded?0:(2+speed*.85)*1)*dt;
  ringGroup.forEach(r=>{r.position.z+=dz;r.rotation.z+=dt*.8});
