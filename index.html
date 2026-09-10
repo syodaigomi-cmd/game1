@@ -33,7 +33,7 @@ button{border:0;border-radius:12px;padding:9px 13px;font-weight:800;background:#
 <div id="ui">
 <div class="panel">⭕ リング <span id="score">0</span></div><div class="panel">⏱️ <span id="time">2:00</span></div>
 <div class="panel">⏱️ 時間 <select id="duration"><option value="60">1分</option><option value="120" selected>2分</option><option value="180">3分</option></select></div><div class="panel">⚡ 速度 <input id="speed" type="range" min="1" max="10" value="5"> <span id="speedVal">5</span></div>
-<div class="panel" id="status">顔操作：準備中</div>
+<div class="panel" id="status">顔操作：準備中</div><div class="panel" id="mpDiag">MediaPipe: 未起動</div>
 <button id="camBtn">📷 カメラ</button><button id="faceResetBtn">🎯 顔認識リセット</button>
 <button id="resetBtn">↻ リセット</button>
 </div>
@@ -244,7 +244,7 @@ async function startCamera(){
  }
 }
 async function loadMediaPipe(){
-  $('status').textContent='⏳ 顔認識ライブラリを読み込み中…';
+  $('status').textContent='⏳ MediaPipeライブラリを読み込み中…'; $('mpDiag').textContent='MediaPipe: ライブラリ読み込み中…';
   try{
     const mod=await import('https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.22/+esm');
     MPFilesetResolver=mod.FilesetResolver;
@@ -253,7 +253,7 @@ async function loadMediaPipe(){
     return true;
   }catch(e){
     console.error(e);
-    $('status').textContent='⚠️ 顔認識ライブラリの読み込み失敗：ネット接続を確認してください';
+    $('status').textContent='⚠️ MediaPipe読み込み失敗。通信状態を確認して再起動してください'; $('mpDiag').textContent='MediaPipe: ライブラリ失敗';
     return false;
   }
 }
@@ -262,26 +262,26 @@ async function setupFace(){
   if(!MPFilesetResolver||!MPFaceLandmarker){
     if(!(await loadMediaPipe())) throw new Error('MediaPipe読み込み失敗');
   }
-  $('status').textContent='⏳ 顔認識エンジンを起動中…';
+  $('status').textContent='⏳ MediaPipeエンジンを起動中…'; $('mpDiag').textContent='MediaPipe: エンジン起動中…';
   const vision=await MPFilesetResolver.forVisionTasks('https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.22/wasm');
   const common={
    baseOptions:{modelAssetPath:'https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task'},
    runningMode:'VIDEO',numFaces:1,minFaceDetectionConfidence:.45,minFacePresenceConfidence:.45,minTrackingConfidence:.45
   };
   try{
-   faceLandmarker=await MPFaceLandmarker.createFromOptions(vision,{...common,baseOptions:{...common.baseOptions,delegate:'GPU'}});
+   faceLandmarker=await MPFaceLandmarker.createFromOptions(vision,{...common,baseOptions:{...common.baseOptions,delegate:'GPU'}}); $('mpDiag').textContent='MediaPipe: GPU起動OK';
   }catch(gpuError){
    console.warn('GPU失敗→CPU',gpuError);
-   faceLandmarker=await MPFaceLandmarker.createFromOptions(vision,{...common,baseOptions:{...common.baseOptions,delegate:'CPU'}});
+   faceLandmarker=await MPFaceLandmarker.createFromOptions(vision,{...common,baseOptions:{...common.baseOptions,delegate:'CPU'}}); $('mpDiag').textContent='MediaPipe: CPU起動OK';
   }
   faceReady=true;
   resetFaceCalibration();
-  $('status').textContent='👤 顔認識ON：顔を中央に置いてください';
+  $('status').textContent='👤 顔認識ON：顔を中央に置いてください'; $('mpDiag').textContent='MediaPipe: 起動OK・顔待ち';
   detectFace();
  }catch(e){
   faceReady=false;
   console.error(e);
-  $('status').textContent='⚠️ 顔認識起動失敗：'+(e.message||e.name);
+  $('status').textContent='⚠️ MediaPipe起動失敗：'+(e.message||e.name); $('mpDiag').textContent='MediaPipe: 起動失敗';
  }
 }
 function detectFace(){
@@ -294,7 +294,7 @@ function detectFace(){
  lastFaceTime=now; faceBusy=true;
  try{
   const r=faceLandmarker.detectForVideo(video,now);
-  if(r.faceLandmarks?.length){
+  if(r.faceLandmarks?.length){ $('mpDiag').textContent='MediaPipe: 顔検出OK';
    const lm=r.faceLandmarks[0];
    const fx=(lm[234].x+lm[454].x)/2;
    const fy=(lm[10].y+lm[152].y)/2;
