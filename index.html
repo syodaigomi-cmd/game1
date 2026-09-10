@@ -26,7 +26,7 @@ button{border:0;border-radius:12px;padding:9px 13px;font-weight:800;background:#
 <h1>🎈 3D 飛行船</h1>
 <p>顔を動かして飛行船を操縦し、<b>リングをくぐろう！</b><br>
 障害物なし。飛行船は画面中央より少し上がホームポジションです。</p>
-<button class="big" id="startBtn">カメラを使ってスタート</button>
+<button class="big" id="startBtn">カメラを使ってスタート</button><br><button id="retryFaceBtn" style="margin-top:10px">🔄 顔認識を再起動</button>
 <p style="font-size:12px">カメラの許可が必要です。うまく動かない時は、下のタッチ操作も使えます。</p>
 </div></div>
 
@@ -41,18 +41,18 @@ button{border:0;border-radius:12px;padding:9px 13px;font-weight:800;background:#
 <div id="help">顔を「上・下・左・右」に大きく動かすと、飛行船も大きく動きます　｜　画面タッチでも操作できます</div>
 
 <script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.22/vision_bundle.js"></script>
+
 <script>
 let scene,camera,renderer,ship,ringGroup=[],clouds=[],propellers=[];
 let score=0, speed=5, durationSeconds=120, faceLandmarker=null, stream=null, gameSeconds=120, gameStart=0, gameEnded=false;
 let targetX=0,targetY=2.8, shipX=0,shipY=2.8, shipZ=0, velX=0,velY=0;
-let baseX=null,baseY=null,faceReady=false,faceBusy=false,lastFaceTime=0,smoothX=.5,smoothY=.5,faceLost=0,lastTime=performance.now(),ringTimer=0;
+let baseX=null,baseY=null,faceReady=false,faceBusy=false,lastFaceTime=0,smoothX=.5,smoothY=.5,faceLost=0,lastTime=performance.now(),ringTimer=0; let MPFilesetResolver=null, MPFaceLandmarker=null;
 
 const $=id=>document.getElementById(id);
 $('speed').oninput=e=>{speed=+e.target.value;$('speedVal').textContent=speed};$('duration').onchange=e=>{durationSeconds=+e.target.value;resetGame()};
 $('resetBtn').onclick=()=>resetGame();
 $('camBtn').onclick=()=>startCamera();
-$('faceResetBtn').onclick=()=>resetFaceCalibration();
+$('faceResetBtn').onclick=()=>resetFaceCalibration(); $('retryFaceBtn').onclick=async()=>{if(!renderer)init(); await startCamera();};
 
 function init(){
  scene=new THREE.Scene();
@@ -249,22 +249,46 @@ async function startCamera(){
    : '📷 カメラ開始エラー：'+(e.message||e.name);
  }
 }
+async function loadMediaPipe(){
+  $('status').textContent='⏳ 顔認識ライブラリを読み込み中…';
+  try{
+    const mod=await import('https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.22/+esm');
+    MPFilesetResolver=mod.FilesetResolver;
+    MPFaceLandmarker=mod.FaceLandmarker;
+    if(!MPFilesetResolver||!MPFaceLandmarker) throw new Error('顔認識部品を取得できません');
+    return true;
+  }catch(e){
+    console.error(e);
+    $('status').textContent='⚠️ 顔認識ライブラリの読み込み失敗：ネット接続を確認してください';
+    return false;
+  }
+}
 async function setupFace(){
  try{
-  if(typeof FilesetResolver==='undefined'||typeof FaceLandmarker==='undefined') throw new Error('MediaPipe未読み込み');
-  const vision=await FilesetResolver.forVisionTasks('https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.22/wasm');
+  if(!MPFilesetResolver||!MPFaceLandmarker){
+    if(!(await loadMediaPipe())) throw new Error('MediaPipe読み込み失敗');
+  }
+  $('status').textContent='⏳ 顔認識エンジンを起動中…';
+  const vision=await MPFilesetResolver.forVisionTasks('https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.22/wasm');
   const common={
    baseOptions:{modelAssetPath:'https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task'},
    runningMode:'VIDEO',numFaces:1,minFaceDetectionConfidence:.45,minFacePresenceConfidence:.45,minTrackingConfidence:.45
   };
   try{
-   faceLandmarker=await FaceLandmarker.createFromOptions(vision,{...common,baseOptions:{...common.baseOptions,delegate:'GPU'}});
+   faceLandmarker=await MPFaceLandmarker.createFromOptions(vision,{...common,baseOptions:{...common.baseOptions,delegate:'GPU'}});
   }catch(gpuError){
    console.warn('GPU失敗→CPU',gpuError);
-   faceLandmarker=await FaceLandmarker.createFromOptions(vision,{...common,baseOptions:{...common.baseOptions,delegate:'CPU'}});
+   faceLandmarker=await MPFaceLandmarker.createFromOptions(vision,{...common,baseOptions:{...common.baseOptions,delegate:'CPU'}});
   }
-  faceReady=true; resetFaceCalibration(); $('status').textContent='👤 顔認識ON：顔を中央に置いてください'; detectFace();
- }catch(e){faceReady=false;$('status').textContent='⚠️ 顔認識起動失敗：'+(e.message||e.name);console.error(e)}
+  faceReady=true;
+  resetFaceCalibration();
+  $('status').textContent='👤 顔認識ON：顔を中央に置いてください';
+  detectFace();
+ }catch(e){
+  faceReady=false;
+  console.error(e);
+  $('status').textContent='⚠️ 顔認識起動失敗：'+(e.message||e.name);
+ }
 }
 function detectFace(){
  requestAnimationFrame(detectFace);
@@ -337,9 +361,9 @@ function animate(){
 }
 function resize(){camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight)}
 $('startBtn').onclick=async()=>{
-  $('start').style.display='none';
   if(!renderer) init();
   await startCamera();
+  if(stream) $('start').style.display='none';
 };
 </script>
 </body>
