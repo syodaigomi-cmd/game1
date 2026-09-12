@@ -58,7 +58,7 @@ const video=document.getElementById('cam'),statusEl=document.getElementById('sta
 let W,H,dpr,playing=false,score=0,speed=2,ship=0,faceX=0,faceY=0,controlX=0,controlY=0,ringDist=1,ringX=0,ringY=0,worldX=0,worldY=0,ringShape=0,ringColor='#ffd83d',ringSize=32;
 const speeds=[0.00045,0.0007,0.0010,0.00135];
 let last=0,particles=[];
-let faceReady=false,faceDetected=false,neutralX=.5,neutralY=.5,faceLoopStarted=false;
+let faceReady=false,faceDetected=false,neutralX=.5,neutralY=.5,faceLoopStarted=false,lastFaceSeen=0,faceSamples=0;
 
 function resize(){dpr=devicePixelRatio||1;W=innerWidth;H=innerHeight;canvas.width=W*dpr;canvas.height=H*dpr;ctx.setTransform(dpr,0,0,dpr,0,0)}
 addEventListener('resize',resize);resize();
@@ -97,7 +97,6 @@ function drawScene(t){
    // aircraft
    drawShip(W/2+controlX*W*.22,H/2+controlY*H*.22);
  }
- requestAnimationFrame(drawScene);
 }
 function drawShip(x,y){
  ctx.save();ctx.translate(x,y);ctx.rotate(controlX*.10);
@@ -128,19 +127,20 @@ function loop(t){drawScene(t);if(playing){worldX += (faceX-worldX)*.085;worldY +
 requestAnimationFrame(loop);
 
 async function start(){
- menu.classList.add('hidden');result.classList.add('hidden');hud.classList.remove('hidden');document.getElementById('speedHud').textContent=['','遅い','普通','速い','高速'][speed];
+ menu.classList.add('hidden');result.classList.add('hidden');hud.classList.remove('hidden');
+ document.getElementById('speedHud').textContent=['','遅い','普通','速い','高速'][speed];
  statusEl.classList.remove('hidden');statusEl.textContent='カメラを起動中…';
- faceDetected=false;neutralX=.5;neutralY=.5;faceX=0;faceY=0;controlX=0;controlY=0;worldX=0;worldY=0;
+ faceDetected=false;faceSamples=0;neutralX=.5;neutralY=.5;faceX=0;faceY=0;controlX=0;controlY=0;worldX=0;worldY=0;
  try{
-  if(!window.isSecureContext || !navigator.mediaDevices?.getUserMedia){throw new Error('SECURE_CONTEXT');}
-  const stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'user'},width:{ideal:640},height:{ideal:480}},audio:false});
+  if(!window.isSecureContext || !navigator.mediaDevices?.getUserMedia)throw new Error('SECURE_CONTEXT');
+  const stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:'user',width:{ideal:640},height:{ideal:480}},audio:false});
   video.srcObject=stream;video.style.display='block';await video.play();
   await loadFace();
-  statusEl.textContent='顔を中央に合わせています…';
   playing=true;score=0;document.getElementById('score').textContent=0;resetRing();
+  statusEl.textContent='顔を中央にしてから、ゆっくり左右・上下に動かしてください';
  }catch(e){
   console.error(e);
-  statusEl.textContent = e.message==='SECURE_CONTEXT' ? '顔操作にはHTTPSまたはlocalhostで開いてください' : 'カメラ/顔認識を開始できません。カメラ許可と通信環境を確認してください';
+  statusEl.textContent=e.message==='SECURE_CONTEXT'?'HTTPSまたはlocalhostで開いてください':'カメラ/顔認識を開始できません。カメラ許可を確認してください';
  }
 }
 async function loadFace(){
@@ -148,22 +148,33 @@ async function loadFace(){
  if(typeof FaceMesh==='undefined')throw new Error('FACEMESH_LOAD');
  faceLoopStarted=true;
  const fm=new FaceMesh({locateFile:f=>`https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${f}`});
- fm.setOptions({maxNumFaces:1,refineLandmarks:true,minDetectionConfidence:.5,minTrackingConfidence:.5});
+ fm.setOptions({maxNumFaces:1,refineLandmarks:true,minDetectionConfidence:.45,minTrackingConfidence:.45});
  fm.onResults(r=>{
   if(!r.multiFaceLandmarks?.length){faceDetected=false;return;}
   const p=r.multiFaceLandmarks[0];
   const nose=p[1], eyeL=p[33], eyeR=p[263];
-  // 目の中心＋鼻を使って顔の中心を安定させる
-  const cx=(nose.x+(eyeL.x+eyeR.x)/2)/2, cy=(nose.y+(eyeL.y+eyeR.y)/2)/2;
-  if(!faceDetected){neutralX=cx;neutralY=cy;faceDetected=true;statusEl.textContent='顔認識 ON：顔を動かして飛行船を操作';}
-  let dx=cx-neutralX, dy=cy-neutralY;
-  if(Math.abs(dx)<.012)dx=0;if(Math.abs(dy)<.012)dy=0;
-  // カメラ映像は鏡表示なので左右を反転。感度は高め。
-  faceX=Math.max(-1,Math.min(1,-dx*7.0));
-  faceY=Math.max(-1,Math.min(1,dy*7.0));
+  const eyeCx=(eyeL.x+eyeR.x)/2, eyeCy=(eyeL.y+eyeR.y)/2;
+  const cx=nose.x*.65+eyeCx*.35, cy=nose.y*.65+eyeCy*.35;
+  lastFaceSeen=performance.now();
+  if(!faceDetected){
+    neutralX=cx;neutralY=cy;faceDetected=true;faceSamples=0;
+    statusEl.textContent='顔認識 ON：顔を左右・上下に動かしてください';
+  }
+  // ホーム位置との差を大きく反映。中央付近の微小な揺れは無視。
+  let dx=cx-neutralX,dy=cy-neutralY;
+  if(Math.abs(dx)<.008)dx=0;if(Math.abs(dy)<.008)dy=0;
+  const targetX=Math.max(-1,Math.min(1,-dx*10));
+  const targetY=Math.max(-1,Math.min(1, dy*10));
+  faceX += (targetX-faceX)*.35;
+  faceY += (targetY-faceY)*.35;
+  faceSamples++;
+  if(faceSamples%15===0)statusEl.textContent=`顔認識 ON　左右 ${Math.round(faceX*100)}　上下 ${Math.round(faceY*100)}`;
  });
  const tick=async()=>{
-  if(video.readyState>=2){try{await fm.send({image:video})}catch(e){console.error(e)}}
+  if(video.readyState>=2){
+   try{await fm.send({image:video});}
+   catch(e){console.error('FaceMesh:',e);statusEl.textContent='顔認識処理でエラーが発生しました';}
+  }
   requestAnimationFrame(tick);
  };
  tick();
