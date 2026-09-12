@@ -54,8 +54,8 @@ button.sel{background:#19a8e8}button.main{width:100%;background:#17b978;font-siz
 const canvas=document.getElementById('game'),ctx=canvas.getContext('2d');
 const menu=document.getElementById('menu'),hud=document.getElementById('hud'),result=document.getElementById('result');
 const video=document.getElementById('cam'),statusEl=document.getElementById('status');
-let W,H,dpr,playing=false,score=0,speed=2,ship=0,faceX=0,faceY=0,ringDist=1,ringX=0,ringY=0,worldX=0,worldY=0;
-const speeds=[0.0009,0.0015,0.0022,0.0030];
+let W,H,dpr,playing=false,score=0,speed=2,ship=0,faceX=0,faceY=0,controlX=0,controlY=0,ringDist=1,ringX=0,ringY=0,worldX=0,worldY=0,ringShape=0,ringColor='#ffd83d',ringSize=32;
+const speeds=[0.00045,0.0007,0.0010,0.00135];
 let last=0,particles=[];
 
 function resize(){dpr=devicePixelRatio||1;W=innerWidth;H=innerHeight;canvas.width=W*dpr;canvas.height=H*dpr;ctx.setTransform(dpr,0,0,dpr,0,0)}
@@ -64,50 +64,53 @@ addEventListener('resize',resize);resize();
 document.querySelectorAll('[data-speed]').forEach(b=>b.onclick=()=>{speed=+b.dataset.speed;document.querySelectorAll('[data-speed]').forEach(x=>x.classList.remove('sel'));b.classList.add('sel')});
 document.querySelectorAll('[data-ship]').forEach(b=>b.onclick=()=>{ship=+b.dataset.ship;document.querySelectorAll('[data-ship]').forEach(x=>x.classList.remove('sel'));b.classList.add('sel')});
 
-function resetRing(){ringDist=1;ringX=(Math.random()*1.6-0.8);ringY=(Math.random()*1.0-0.5)}
+function resetRing(){ringDist=1;ringX=(Math.random()*1.6-0.8);ringY=(Math.random()*1.0-0.5);ringShape=Math.floor(Math.random()*6);ringColor=['#ffd83d','#ff8fb3','#7ed6ff','#a9e77b','#b99cff'][Math.floor(Math.random()*5)];ringSize=24+Math.random()*22}
 function drawScene(t){
  ctx.clearRect(0,0,W,H);
- // pseudo-3D sky gradient
- let g=ctx.createLinearGradient(0,0,0,H);g.addColorStop(0,'#4db4ea');g.addColorStop(.58,'#d4f5ff');g.addColorStop(1,'#76c66b');ctx.fillStyle=g;ctx.fillRect(0,0,W,H);
+ // natural landscape background
+ let g=ctx.createLinearGradient(0,0,0,H);g.addColorStop(0,'#62b8e8');g.addColorStop(.52,'#dff5ff');g.addColorStop(1,'#8bcf78');ctx.fillStyle=g;ctx.fillRect(0,0,W,H);
+ // distant mountain range
+ ctx.fillStyle='#91b8c9';ctx.beginPath();ctx.moveTo(0,H*.48);for(let x=0;x<=W;x+=65)ctx.lineTo(x,H*.39-Math.sin(x*.018)*32);ctx.lineTo(W,H*.67);ctx.lineTo(0,H*.67);ctx.fill();
+ ctx.fillStyle='#709b91';ctx.beginPath();ctx.moveTo(0,H*.58);for(let x=0;x<=W;x+=55)ctx.lineTo(x,H*.52-Math.sin(x*.026+1.2)*24);ctx.lineTo(W,H);ctx.lineTo(0,H);ctx.fill();
+ // valley lake
+ ctx.fillStyle='#71bfd3';ctx.beginPath();ctx.moveTo(W*.30,H);ctx.quadraticCurveTo(W*.50,H*.67,W*.72,H);ctx.closePath();ctx.fill();
+ // foreground forest
+ ctx.fillStyle='#4f8d61';for(let x=0;x<W;x+=30){let y=H*.64+Math.sin(x*.035)*13;ctx.beginPath();ctx.moveTo(x,y+42);ctx.lineTo(x+15,y);ctx.lineTo(x+30,y+42);ctx.closePath();ctx.fill()}
+ // a few distant trees
+ ctx.fillStyle='#5c9a68';for(let x=20;x<W;x+=95){let y=H*.57+Math.sin(x*.05)*10;ctx.beginPath();ctx.moveTo(x,y+28);ctx.lineTo(x+12,y);ctx.lineTo(x+24,y+28);ctx.closePath();ctx.fill()}
  // clouds
- for(let i=0;i<8;i++){let x=((i*227+t*.018)% (W+300))-150,y=80+(i%4)*70;ctx.fillStyle='rgba(255,255,255,.55)';ctx.beginPath();ctx.ellipse(x,y,70,22,0,0,7);ctx.ellipse(x+45,y-8,45,27,0,0,7);ctx.fill()}
- // ground perspective lines
- ctx.strokeStyle='rgba(255,255,255,.20)';ctx.lineWidth=2;
- for(let i=-8;i<=8;i++){ctx.beginPath();ctx.moveTo(W/2+i*25,H*.62);ctx.lineTo(W/2+i*180,H);ctx.stroke()}
- for(let j=0;j<8;j++){let y=H*.64+Math.pow(j/8,1.8)*H*.36;ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(W,y);ctx.stroke()}
+ for(let i=0;i<4;i++){let x=((i*317+t*.010)%(W+300))-150,y=95+(i%3)*105;ctx.fillStyle='rgba(255,255,255,.58)';ctx.beginPath();ctx.ellipse(x,y,58,18,0,0,7);ctx.ellipse(x+38,y-6,35,21,0,0,7);ctx.fill()}
  // ring
  if(playing){
    ringDist-=speeds[speed-1]*16;
    if(ringDist<0.05){score++;document.getElementById('score').textContent=score;resetRing()}
    const perspective=1/ringDist,rx=W/2+(ringX-worldX)*W*.32*perspective,ry=H*.47+(ringY-worldY)*H*.28*perspective;
-   const r=Math.max(12,32*perspective);
-   if(rx>-r&&rx<W+r&&ry>-r&&ry<H+r){ctx.strokeStyle='#ffd83d';ctx.lineWidth=Math.max(4,r*.16);ctx.beginPath();ctx.arc(rx,ry,r,0,Math.PI*2);ctx.stroke();
-     ctx.strokeStyle='rgba(255,255,255,.55)';ctx.lineWidth=2;ctx.beginPath();ctx.arc(rx,ry,r*.65,0,Math.PI*2);ctx.stroke();
+   const r=Math.max(12,ringSize*perspective);
+   const sides=[0,3,4,5,6,8][ringShape];
+   if(rx>-r&&rx<W+r&&ry>-r&&ry<H+r){ctx.strokeStyle=ringColor;ctx.lineWidth=Math.max(4,r*.16);ctx.beginPath();
+     if(sides===0){ctx.arc(rx,ry,r,0,Math.PI*2)}else{for(let k=0;k<sides;k++){const a=-Math.PI/2+k*Math.PI*2/sides;const px=rx+Math.cos(a)*r,py=ry+Math.sin(a)*r;k?ctx.lineTo(px,py):ctx.moveTo(px,py)}ctx.closePath()}ctx.stroke();
+     ctx.strokeStyle='rgba(255,255,255,.55)';ctx.lineWidth=2;ctx.beginPath();
+     if(sides===0){ctx.arc(rx,ry,r*.65,0,Math.PI*2)}else{for(let k=0;k<sides;k++){const a=-Math.PI/2+k*Math.PI*2/sides;const px=rx+Math.cos(a)*r*.65,py=ry+Math.sin(a)*r*.65;k?ctx.lineTo(px,py):ctx.moveTo(px,py)}ctx.closePath()}ctx.stroke();
    }
    // aircraft
-   drawShip(W/2,H*.72);
+   drawShip(W/2+controlX*W*.22,H/2+controlY*H*.22);
  }
  requestAnimationFrame(drawScene);
 }
 function drawShip(x,y){
- ctx.save();ctx.translate(x,y);ctx.rotate(faceX*.08);
+ ctx.save();ctx.translate(x,y);ctx.rotate(controlX*.10);
  const styles=[
    {body:'#f8a9c4',accent:'#ffd7e5',window:'#9edcf2',prop:'#ffd7a8'},
    {body:'#f7c6d8',accent:'#fff0f5',window:'#a9e3ef',prop:'#f5d9a8'},
    {body:'#f49fbd',accent:'#ffe0eb',window:'#a9d9f0',prop:'#f8c9e0'}
  ];
  const q=styles[ship];
- // rounded balloon body
- ctx.fillStyle=q.body;ctx.beginPath();ctx.arc(0,-4,48,0,Math.PI*2);ctx.fill();
- ctx.fillStyle=q.accent;ctx.beginPath();ctx.arc(0,-4,39,0,Math.PI*2);ctx.fill();
- // center stripe
- ctx.fillStyle=q.body;ctx.fillRect(-7,-35,14,62);
- // cabin
- ctx.fillStyle='#fff4df';ctx.beginPath();ctx.roundRect(-29,21,58,25,12);ctx.fill();
- ctx.fillStyle=q.window;for(const wx of [-18,0,18]){ctx.beginPath();ctx.roundRect(wx-6,25,12,8,3);ctx.fill()}
- // top flag
- ctx.strokeStyle='#e7ad73';ctx.lineWidth=4;ctx.beginPath();ctx.moveTo(0,-38);ctx.lineTo(0,-58);ctx.stroke();
- ctx.fillStyle='#ff8fb3';ctx.beginPath();ctx.moveTo(2,-57);ctx.lineTo(27,-52);ctx.lineTo(2,-45);ctx.closePath();ctx.fill();
+ // soft rounded balloon body: gradient creates the volume, with no outline, tail line, or gondola
+ const grad=ctx.createRadialGradient(-18,-25,5,10,8,62);grad.addColorStop(0,'#ffffff');grad.addColorStop(.20,q.accent);grad.addColorStop(.55,q.body);grad.addColorStop(1,'#d77f9f');
+ ctx.fillStyle=grad;ctx.beginPath();ctx.ellipse(0,-4,52,43,0,0,Math.PI*2);ctx.fill();
+ const shade=ctx.createLinearGradient(-52,0,52,0);shade.addColorStop(0,'rgba(255,255,255,.12)');shade.addColorStop(.5,'rgba(255,190,215,.30)');shade.addColorStop(1,'rgba(150,65,105,.12)');
+ ctx.fillStyle=shade;ctx.beginPath();ctx.ellipse(0,-2,50,23,0,0,Math.PI*2);ctx.fill();
+ ctx.fillStyle='rgba(255,255,255,.42)';ctx.beginPath();ctx.ellipse(-18,-23,19,9,-.25,0,Math.PI*2);ctx.fill();
  // symmetric propellers
  for(const side of [-1,1]){
    ctx.save();ctx.translate(side*59,-3);
@@ -116,12 +119,10 @@ function drawShip(x,y){
    for(let a=0;a<4;a++){let ang=a*Math.PI/2;ctx.beginPath();ctx.moveTo(Math.cos(ang)*4,Math.sin(ang)*4);ctx.lineTo(Math.cos(ang)*20,Math.sin(ang)*7);ctx.stroke()}
    ctx.fillStyle=q.prop;ctx.beginPath();ctx.arc(0,0,5,0,Math.PI*2);ctx.fill();ctx.restore();
  }
- // cute face / decorative motif
- // no face: keep the balloon clean and geometric
- ctx.strokeStyle='#f0b7ca';ctx.lineWidth=2;ctx.beginPath();ctx.arc(0,-4,45,0,Math.PI*2);ctx.stroke();
+ // clean balloon body — no face and no outline
  ctx.restore();
 }
-function loop(t){drawScene(t);if(playing){worldX += (faceX-worldX)*.035;worldY += (faceY-worldY)*.035}}
+function loop(t){drawScene(t);if(playing){worldX += (faceX-worldX)*.085;worldY += (faceY-worldY)*.085; controlX += (faceX-controlX)*.12; controlY += (faceY-controlY)*.12}}
 requestAnimationFrame(loop);
 
 async function start(){
@@ -133,7 +134,8 @@ async function start(){
   statusEl.textContent='顔を画面中央に合わせてください';
   // Lightweight face-control prototype: use MediaPipe if available.
   await loadFace();
-  statusEl.textContent='顔操作 ON';
+  faceX=0;faceY=0;controlX=0;controlY=0;worldX=0;worldY=0;
+  statusEl.textContent='顔操作 ON：顔を中央にするとホームポジション';
   playing=true;score=0;document.getElementById('score').textContent=0;resetRing();
  }catch(e){statusEl.textContent='カメラを利用できません。ブラウザのカメラ許可を確認してください';setTimeout(()=>{playing=true;score=0;resetRing()},1800)}
 }
@@ -144,8 +146,11 @@ async function loadFace(){
  fm.setOptions({maxNumFaces:1,refineLandmarks:false,minDetectionConfidence:.55,minTrackingConfidence:.55});
  fm.onResults(r=>{if(!r.multiFaceLandmarks?.length)return;const p=r.multiFaceLandmarks[0];
   const nose=p[1],eyeL=p[33],eyeR=p[263];
-  faceX=Math.max(-1,Math.min(1,(nose.x-.5)*3));
-  faceY=Math.max(-1,Math.min(1,(nose.y-.5)*3));
+  let dx=(nose.x-.5), dy=(nose.y-.5);
+  // 画面中央がホームポジション。小さな揺れは無視し、顔の移動を直感的に大きく反映。
+  if(Math.abs(dx)<.025)dx=0; if(Math.abs(dy)<.025)dy=0;
+  faceX=Math.max(-1,Math.min(1,dx*5.0));
+  faceY=Math.max(-1,Math.min(1,dy*5.0));
  });
  const tick=async()=>{if(video.readyState>=2)await fm.send({image:video});requestAnimationFrame(tick)};tick();
 }
