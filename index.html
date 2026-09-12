@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
 <title>顔操作フライトゲーム 試作</title>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js"></script>
 <style>
 *{box-sizing:border-box} body{margin:0;background:#071426;color:#fff;font-family:system-ui,sans-serif;overflow:hidden}
 #app{height:100vh;position:relative;background:linear-gradient(#56b9ee 0%,#c9f1ff 58%,#79c76a 100%)}
@@ -57,6 +58,7 @@ const video=document.getElementById('cam'),statusEl=document.getElementById('sta
 let W,H,dpr,playing=false,score=0,speed=2,ship=0,faceX=0,faceY=0,controlX=0,controlY=0,ringDist=1,ringX=0,ringY=0,worldX=0,worldY=0,ringShape=0,ringColor='#ffd83d',ringSize=32;
 const speeds=[0.00045,0.0007,0.0010,0.00135];
 let last=0,particles=[];
+let faceReady=false,faceDetected=false,neutralX=.5,neutralY=.5,faceLoopStarted=false;
 
 function resize(){dpr=devicePixelRatio||1;W=innerWidth;H=innerHeight;canvas.width=W*dpr;canvas.height=H*dpr;ctx.setTransform(dpr,0,0,dpr,0,0)}
 addEventListener('resize',resize);resize();
@@ -128,31 +130,43 @@ requestAnimationFrame(loop);
 async function start(){
  menu.classList.add('hidden');result.classList.add('hidden');hud.classList.remove('hidden');document.getElementById('speedHud').textContent=['','遅い','普通','速い','高速'][speed];
  statusEl.classList.remove('hidden');statusEl.textContent='カメラを起動中…';
+ faceDetected=false;neutralX=.5;neutralY=.5;faceX=0;faceY=0;controlX=0;controlY=0;worldX=0;worldY=0;
  try{
-  const stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:'user',width:{ideal:640},height:{ideal:480}},audio:false});
+  if(!window.isSecureContext || !navigator.mediaDevices?.getUserMedia){throw new Error('SECURE_CONTEXT');}
+  const stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'user'},width:{ideal:640},height:{ideal:480}},audio:false});
   video.srcObject=stream;video.style.display='block';await video.play();
-  statusEl.textContent='顔を画面中央に合わせてください';
-  // Lightweight face-control prototype: use MediaPipe if available.
   await loadFace();
-  faceX=0;faceY=0;controlX=0;controlY=0;worldX=0;worldY=0;
-  statusEl.textContent='顔操作 ON：顔を中央にするとホームポジション';
+  statusEl.textContent='顔を中央に合わせています…';
   playing=true;score=0;document.getElementById('score').textContent=0;resetRing();
- }catch(e){statusEl.textContent='カメラを利用できません。ブラウザのカメラ許可を確認してください';setTimeout(()=>{playing=true;score=0;resetRing()},1800)}
+ }catch(e){
+  console.error(e);
+  statusEl.textContent = e.message==='SECURE_CONTEXT' ? '顔操作にはHTTPSまたはlocalhostで開いてください' : 'カメラ/顔認識を開始できません。カメラ許可と通信環境を確認してください';
+ }
 }
 async function loadFace(){
- const s=document.createElement('script');s.src='https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js';document.head.appendChild(s);
- await new Promise((resolve,reject)=>{s.onload=resolve;s.onerror=reject});
+ if(faceLoopStarted)return;
+ if(typeof FaceMesh==='undefined')throw new Error('FACEMESH_LOAD');
+ faceLoopStarted=true;
  const fm=new FaceMesh({locateFile:f=>`https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${f}`});
- fm.setOptions({maxNumFaces:1,refineLandmarks:false,minDetectionConfidence:.55,minTrackingConfidence:.55});
- fm.onResults(r=>{if(!r.multiFaceLandmarks?.length)return;const p=r.multiFaceLandmarks[0];
-  const nose=p[1],eyeL=p[33],eyeR=p[263];
-  let dx=(nose.x-.5), dy=(nose.y-.5);
-  // 画面中央がホームポジション。小さな揺れは無視し、顔の移動を直感的に大きく反映。
-  if(Math.abs(dx)<.025)dx=0; if(Math.abs(dy)<.025)dy=0;
-  faceX=Math.max(-1,Math.min(1,dx*5.0));
-  faceY=Math.max(-1,Math.min(1,dy*5.0));
+ fm.setOptions({maxNumFaces:1,refineLandmarks:true,minDetectionConfidence:.5,minTrackingConfidence:.5});
+ fm.onResults(r=>{
+  if(!r.multiFaceLandmarks?.length){faceDetected=false;return;}
+  const p=r.multiFaceLandmarks[0];
+  const nose=p[1], eyeL=p[33], eyeR=p[263];
+  // 目の中心＋鼻を使って顔の中心を安定させる
+  const cx=(nose.x+(eyeL.x+eyeR.x)/2)/2, cy=(nose.y+(eyeL.y+eyeR.y)/2)/2;
+  if(!faceDetected){neutralX=cx;neutralY=cy;faceDetected=true;statusEl.textContent='顔認識 ON：顔を動かして飛行船を操作';}
+  let dx=cx-neutralX, dy=cy-neutralY;
+  if(Math.abs(dx)<.012)dx=0;if(Math.abs(dy)<.012)dy=0;
+  // カメラ映像は鏡表示なので左右を反転。感度は高め。
+  faceX=Math.max(-1,Math.min(1,-dx*7.0));
+  faceY=Math.max(-1,Math.min(1,dy*7.0));
  });
- const tick=async()=>{if(video.readyState>=2)await fm.send({image:video});requestAnimationFrame(tick)};tick();
+ const tick=async()=>{
+  if(video.readyState>=2){try{await fm.send({image:video})}catch(e){console.error(e)}}
+  requestAnimationFrame(tick);
+ };
+ tick();
 }
 document.getElementById('start').onclick=start;
 document.getElementById('retry').onclick=()=>{result.classList.add('hidden');menu.classList.remove('hidden');hud.classList.add('hidden');video.style.display='none';playing=false};
