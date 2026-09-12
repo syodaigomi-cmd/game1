@@ -8,17 +8,17 @@
 <style>
 *{box-sizing:border-box} body{margin:0;background:#071426;color:#fff;font-family:system-ui,sans-serif;overflow:hidden}
 #app{height:100vh;position:relative;background:linear-gradient(#56b9ee 0%,#c9f1ff 58%,#79c76a 100%)}
-canvas{width:100%;height:100%;display:block}
-.panel{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:min(92vw,430px);
+canvas{width:100%;height:100%;display:block;position:absolute;inset:0;z-index:1}
+.panel{z-index:40;position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:min(92vw,430px);
 background:rgba(4,18,35,.88);border:1px solid #6ed7ff;border-radius:22px;padding:24px;text-align:center;box-shadow:0 12px 50px #0008}
 h1{margin:0 0 18px;font-size:28px}.speed{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin:12px 0 20px}
 button{border:0;border-radius:12px;padding:12px;background:#21415e;color:#fff;font-size:15px;font-weight:700}
 button.sel{background:#19a8e8}button.main{width:100%;background:#17b978;font-size:18px}
 .small{font-size:12px;color:#bcd2df;line-height:1.5}.hidden{display:none!important}
-#hud{position:absolute;top:12px;left:12px;right:12px;display:flex;justify-content:space-between;pointer-events:none}
+#hud{z-index:20;position:absolute;top:12px;left:12px;right:12px;display:flex;justify-content:space-between;pointer-events:none}
 .badge{background:#06182dcc;border-radius:12px;padding:8px 12px;font-weight:700}
-#cam{position:absolute;right:10px;bottom:10px;width:130px;height:95px;object-fit:cover;border-radius:12px;opacity:.55;transform:scaleX(-1);display:none}
-#status{position:absolute;left:50%;bottom:15px;transform:translateX(-50%);background:#06182dcc;padding:8px 14px;border-radius:20px;font-size:13px}
+#cam{z-index:30;position:absolute;right:10px;top:10px;width:150px;height:110px;object-fit:cover;border-radius:12px;opacity:.55;transform:scaleX(-1);display:none}
+#status{z-index:25;position:absolute;left:50%;bottom:15px;transform:translateX(-50%);background:#06182dcc;padding:8px 14px;border-radius:20px;font-size:13px}
 </style>
 </head>
 <body>
